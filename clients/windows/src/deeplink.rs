@@ -233,7 +233,7 @@ pub(crate) fn write_shortcut(label: &str, url: &str) -> Result<std::path::PathBu
         link.SetArguments(&HSTRING::from(url))
             .ok()
             .map_err(|e| format!("shortcut argument: {e}"))?;
-        link.SetDescription(&HSTRING::from(format!("Stream from {label}")))
+        link.SetDescription(&HSTRING::from(format!("从 {label} 串流")))
             .ok()
             .map_err(|e| format!("shortcut description: {e}"))?;
         let persist: IPersistFile = link.cast().map_err(|e| format!("shortcut save: {e}"))?;

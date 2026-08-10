@@ -124,20 +124,20 @@ impl ParseError {
     /// the wrong settings" (§10.6) applies to every refusal here.
     pub fn message(&self) -> String {
         match self {
-            ParseError::NotOurScheme => "That isn't a Punktfunk link.".into(),
-            ParseError::TooLong => "That link is too long to be genuine.".into(),
-            ParseError::UnknownRoute(r) => format!("Punktfunk links can't do \"{r}\"."),
+            ParseError::NotOurScheme => "这不是一个 Punktfunk 链接。".into(),
+            ParseError::TooLong => "该链接过长，不是有效链接。".into(),
+            ParseError::UnknownRoute(r) => format!("Punktfunk 链接无法执行 \"{r}\"。"),
             ParseError::PairRefused => {
-                "Pairing can't be done from a link — pair the host in Punktfunk first.".into()
+                "无法通过链接完成配对——请先在 Punktfunk 中配对主机。".into()
             }
-            ParseError::MissingHostRef => "That link doesn't say which host to use.".into(),
+            ParseError::MissingHostRef => "该链接未指明要使用的主机。".into(),
             ParseError::BadEscape | ParseError::ControlChar => {
-                "That link is malformed and was ignored.".into()
+                "该链接格式错误，已被忽略。".into()
             }
-            ParseError::ParamTooLong(p) => format!("That link's \"{p}\" value is too long."),
-            ParseError::BadFingerprint => "That link's host fingerprint isn't a valid one.".into(),
-            ParseError::BadHostParam => "That link's host address isn't valid.".into(),
-            ParseError::BadLaunchId => "That link's game id isn't a valid one.".into(),
+            ParseError::ParamTooLong(p) => format!("该链接的 \"{p}\" 参数值过长。"),
+            ParseError::BadFingerprint => "该链接的主机指纹无效。".into(),
+            ParseError::BadHostParam => "该链接的主机地址无效。".into(),
+            ParseError::BadLaunchId => "该链接的游戏 ID 无效。".into(),
         }
     }
 }

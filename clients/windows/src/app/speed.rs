@@ -83,21 +83,21 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
 
     let back_btn = {
         let ss = set_screen.clone();
-        button("Close")
+        button("关闭")
             .icon(Symbol::Back)
             .on_click(move || ss.call(Screen::Hosts))
             .horizontal_alignment(HorizontalAlignment::Center)
     };
     let headline = if target.name.is_empty() {
-        "Network speed test".to_string()
+        "网络速度测试".to_string()
     } else {
-        format!("Network speed test \u{00B7} {}", target.name)
+        format!("网络速度测试 \u{00B7} {}", target.name)
     };
 
     match &props.state {
         SpeedState::Running => busy_page(
             &headline,
-            "Measuring the path over the real data plane \u{2014} a 2 s probe burst\u{2026}",
+            "正在通过真实数据平面测量链路\u{2014}\u{2014}2 秒探测突发\u{2026}",
             vec![back_btn.into()],
         ),
         SpeedState::Failed(msg) => {
@@ -106,7 +106,7 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
                     .font_size(18.0)
                     .semibold()
                     .horizontal_alignment(HorizontalAlignment::Center),
-                InfoBar::new("Speed test failed")
+                InfoBar::new("速度测试失败")
                     .message(msg.clone())
                     .error()
                     .is_closable(false),
@@ -173,7 +173,7 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
             let mut buttons: Vec<Element> = Vec::new();
             match &profile {
                 None => buttons.push(
-                    button(format!("Use {recommended_mbps:.0} Mb/s"))
+                    button(format!("使用 {recommended_mbps:.0} Mb/s"))
                         .accent()
                         .icon(Symbol::Accept)
                         .on_click(write_global.clone())
@@ -181,7 +181,7 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
                 ),
                 Some(p) if p.overrides.bitrate_kbps.is_some() => buttons.push(
                     button(format!(
-                        "Set {recommended_mbps:.0} Mb/s in \u{201c}{}\u{201d}",
+                        "在\u{201c}{}\u{201d}中设为 {recommended_mbps:.0} Mb/s",
                         p.name
                     ))
                     .accent()
@@ -191,13 +191,13 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
                 ),
                 Some(p) => {
                     buttons.push(
-                        button("Set as default")
+                        button("设为默认")
                             .icon(Symbol::Accept)
                             .on_click(write_global.clone())
                             .into(),
                     );
                     buttons.push(
-                        button(format!("Set in \u{201c}{}\u{201d}", p.name))
+                        button(format!("在\u{201c}{}\u{201d}中设置", p.name))
                             .accent()
                             .icon(Symbol::Accept)
                             .on_click(write_profile(p.id.clone()))
@@ -207,7 +207,7 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
             }
             buttons.push({
                 let ss = set_screen.clone();
-                button("Close")
+                button("关闭")
                     .icon(Symbol::Cancel)
                     .on_click(move || ss.call(Screen::Hosts))
                     .into()
@@ -218,13 +218,13 @@ pub(crate) fn speed_page(props: &SpeedProps, cx: &mut RenderCx) -> Element {
                         .font_size(34.0)
                         .bold()
                         .horizontal_alignment(HorizontalAlignment::Center),
-                    text_block(format!("measured \u{00B7} {loss_pct:.1} % loss"))
+                    text_block(format!("实测 \u{00B7} 丢包率 {loss_pct:.1} %"))
                         .font_size(12.0)
                         .foreground(ThemeRef::SecondaryText)
                         .horizontal_alignment(HorizontalAlignment::Center),
                     text_block(format!(
-                    "Recommended bitrate: {recommended_mbps:.0} Mb/s (\u{2248}70 % of measured, \
-                     leaving headroom for FEC and loss)"
+                    "推荐码率：{recommended_mbps:.0} Mb/s（约为实测值的 70%，\
+                     为 FEC 与丢包预留余量）"
                 ))
                     .font_size(12.0)
                     .foreground(ThemeRef::SecondaryText)

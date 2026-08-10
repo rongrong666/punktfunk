@@ -25,10 +25,10 @@ pub(crate) fn session_page(ctx: &Arc<super::AppCtx>, hud: &HudSample) -> Element
     let host = ctx.shared.target.lock().unwrap().name.clone();
     let browse = ctx.shared.browse.load(std::sync::atomic::Ordering::SeqCst);
     let title = match (browse, host.is_empty()) {
-        (true, true) => "Console library".to_string(),
-        (true, false) => format!("Console library \u{00B7} {host}"),
-        (false, true) => "Streaming".to_string(),
-        (false, false) => format!("Streaming to {host}"),
+        (true, true) => "控制台游戏库".to_string(),
+        (true, false) => format!("控制台游戏库 \u{00B7} {host}"),
+        (false, true) => "串流中".to_string(),
+        (false, false) => format!("正在串流到 {host}"),
     };
 
     // Header: monogram + title + the one thing worth knowing (where the video went).
@@ -39,7 +39,7 @@ pub(crate) fn session_page(ctx: &Arc<super::AppCtx>, hud: &HudSample) -> Element
         vstack((
             text_block(&title).font_size(18.0).semibold(),
             text_block(
-                "The stream has its own window \u{2014} this one returns when the session ends.",
+                "串流有独立窗口\u{2014}\u{2014}会话结束后会回到此窗口。",
             )
             .font_size(12.0)
             .foreground(ThemeRef::SecondaryText),
@@ -62,9 +62,9 @@ pub(crate) fn session_page(ctx: &Arc<super::AppCtx>, hud: &HudSample) -> Element
         // the library between launches, so no stats there is simply normal: no line.
         if !browse {
             let msg = if ctx.settings.lock().unwrap().show_stats {
-                "Waiting for the first stats window\u{2026}"
+                "等待首个统计窗口数据\u{2026}"
             } else {
-                "Stats are off \u{2014} Ctrl+Alt+Shift+S in the stream window turns them on."
+                "统计信息已关闭\u{2014}\u{2014}在串流窗口中按 Ctrl+Alt+Shift+S 开启。"
             };
             body.push(
                 text_block(msg)
@@ -108,8 +108,8 @@ pub(crate) fn session_page(ctx: &Arc<super::AppCtx>, hud: &HudSample) -> Element
 
     body.push(
         text_block(
-            "Ctrl+Alt+Shift+Q releases input \u{00B7} Ctrl+Alt+Shift+D disconnects \u{00B7} \
-             Ctrl+Alt+Shift+S stats \u{00B7} F11 fullscreen",
+            "Ctrl+Alt+Shift+Q 释放输入 \u{00B7} Ctrl+Alt+Shift+D 断开连接 \u{00B7} \
+             Ctrl+Alt+Shift+S 统计信息 \u{00B7} F11 全屏",
         )
         .font_size(11.0)
         .wrap()
@@ -119,7 +119,7 @@ pub(crate) fn session_page(ctx: &Arc<super::AppCtx>, hud: &HudSample) -> Element
     );
     body.push({
         let ctx = ctx.clone();
-        button("Disconnect")
+        button("断开连接")
             .icon(Symbol::Cancel)
             .on_click(move || {
                 // Kill the child; its exit event (the reader thread) navigates to the

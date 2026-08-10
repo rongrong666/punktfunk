@@ -2662,10 +2662,10 @@ struct PresentedWindow {
 }
 
 /// The capture hints (`ui_stream` parity — the words the user reads while released).
-const HINT_KEYBOARD: &str = "Click the stream to capture input · Ctrl+Alt+Shift+Q releases · \
-     Ctrl+Alt+Shift+M mouse mode · Ctrl+Alt+Shift+D disconnects · Ctrl+Alt+Shift+S stats";
-const HINT_WITH_PAD: &str = "Click the stream to capture input · Ctrl+Alt+Shift+Q releases · \
-     Ctrl+Alt+Shift+D disconnects · hold L1 + R1 + Start + Select to leave";
+const HINT_KEYBOARD: &str = "点击串流画面捕获输入 · Ctrl+Alt+Shift+Q 释放 · \
+     Ctrl+Alt+Shift+M 鼠标模式 · Ctrl+Alt+Shift+D 断开连接 · Ctrl+Alt+Shift+S 统计信息";
+const HINT_WITH_PAD: &str = "点击串流画面捕获输入 · Ctrl+Alt+Shift+Q 释放 · \
+     Ctrl+Alt+Shift+D 断开连接 · 长按 L1 + R1 + Start + Select 退出";
 
 /// The unified stats window (design/stats-unification.md) as OSD text at the given tier
 /// (the Android client's vocabulary, each a strict superset of the previous):

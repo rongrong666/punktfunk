@@ -67,9 +67,9 @@ pub fn run_speed_probe(
         Some(identity),
         Duration::from_secs(15),
     )
-    .map_err(|e| format!("connect: {e:?}"))?;
+    .map_err(|e| format!("连接失败：{e:?}"))?;
     c.request_probe(3_000_000, 2_000)
-        .map_err(|e| format!("probe: {e:?}"))?;
+        .map_err(|e| format!("探测失败：{e:?}"))?;
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         std::thread::sleep(Duration::from_millis(250));
@@ -79,7 +79,7 @@ pub fn run_speed_probe(
             return Ok(c.probe_result());
         }
         if Instant::now() > deadline {
-            return Err("probe timed out".to_string());
+            return Err("探测超时".to_string());
         }
     }
 }

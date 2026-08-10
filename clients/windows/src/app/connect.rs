@@ -553,7 +553,7 @@ fn wake_and_connect(
                     return;
                 }
                 Some(WakeOutcome::TimedOut) => {
-                    st.call("The host didn't come online.".to_string());
+                    st.call("主机未能上线。".to_string());
                     ss.call(Screen::Hosts);
                     return;
                 }
@@ -572,12 +572,12 @@ fn wake_and_connect(
 pub(crate) fn connecting_page(ctx: &Arc<AppCtx>, status: &str) -> Element {
     let target_name = ctx.shared.target.lock().unwrap().name.clone();
     let headline = if target_name.is_empty() {
-        "Connecting\u{2026}".to_string()
+        "正在连接\u{2026}".to_string()
     } else {
-        format!("Connecting to {target_name}\u{2026}")
+        format!("正在连接到 {target_name}\u{2026}")
     };
     let detail = if status.is_empty() {
-        "Negotiating the session and creating the virtual display\u{2026}"
+        "正在协商会话并创建虚拟显示器\u{2026}"
     } else {
         status
     };
@@ -594,13 +594,13 @@ pub(crate) fn request_access_page(
 ) -> Element {
     let target_name = ctx.shared.target.lock().unwrap().name.clone();
     let headline = if target_name.is_empty() {
-        "Waiting for approval\u{2026}".to_string()
+        "等待批准\u{2026}".to_string()
     } else {
-        format!("Waiting for {target_name} to approve\u{2026}")
+        format!("等待 {target_name} 批准\u{2026}")
     };
     let cancel_btn = {
         let (ctx, ss) = (ctx.clone(), set_screen.clone());
-        button("Cancel")
+        button("取消")
             .icon(Symbol::Cancel)
             .on_click(move || {
                 // Return the UI immediately; trip the flag this request's event loop
@@ -616,8 +616,8 @@ pub(crate) fn request_access_page(
     };
     busy_page(
         &headline,
-        "Approve this device in the host's console or web UI \u{2014} it connects automatically \
-         once you approve it. No PIN needed.",
+        "请在主机的控制台或 Web 界面中批准本设备\u{2014}\u{2014}批准后会自动连接，\
+         无需 PIN 码。",
         vec![cancel_btn.into()],
     )
 }
@@ -628,13 +628,13 @@ pub(crate) fn request_access_page(
 pub(crate) fn waking_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen>) -> Element {
     let target_name = ctx.shared.target.lock().unwrap().name.clone();
     let headline = if target_name.is_empty() {
-        "Waking the host\u{2026}".to_string()
+        "正在唤醒主机\u{2026}".to_string()
     } else {
-        format!("Waking {target_name}\u{2026}")
+        format!("正在唤醒 {target_name}\u{2026}")
     };
     let cancel_btn = {
         let (ctx, ss) = (ctx.clone(), set_screen.clone());
-        button("Cancel")
+        button("取消")
             .icon(Symbol::Cancel)
             .on_click(move || {
                 // Return the UI immediately and trip the flag the poll loop is watching so it stops
@@ -648,8 +648,8 @@ pub(crate) fn waking_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen>)
     };
     busy_page(
         &headline,
-        "Sent a wake signal and waiting for the host to come online \u{2014} this can take up to a \
-         minute for a sleeping or powered-off machine.",
+        "已发送唤醒信号，正在等待主机上线\u{2014}\u{2014}对于睡眠或关机的机器，\
+         最长可能需要一分钟。",
         vec![cancel_btn.into()],
     )
 }
