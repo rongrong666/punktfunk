@@ -333,15 +333,15 @@ fn notify_on_connect(hwnd: HWND) {
             // The host resolves the name from its trust store, else the device's own Hello name;
             // absent (older host / nameless client) the toast stays generic.
             match &s.client_name {
-                Some(name) => format!("{name} connected"),
-                None => "Client connected".to_string(),
+                Some(name) => format!("{name} 已连接"),
+                None => "客户端已连接".to_string(),
             },
             match &s.session {
                 Some(sess) => format!(
-                    "Streaming {}×{} @ {} fps",
+                    "正在串流 {}×{} @ {} fps",
                     sess.width, sess.height, sess.fps
                 ),
-                None => "A client is streaming from this host.".to_string(),
+                None => "有客户端正在从这台主机串流。".to_string(),
             },
         ),
         _ => return, // is_streaming() implies Running; stay defensive
@@ -425,14 +425,14 @@ fn show_menu(hwnd: HWND) {
         if app().web_console.load(Ordering::SeqCst) {
             add(
                 IDM_OPEN_WEB,
-                "Open web console",
+                "打开 Web 控制台",
                 false,
                 Some(win_theme::GLYPH_GLOBE),
             );
         } else {
             add(
                 IDM_OPEN_WEB,
-                "Open web console (not responding)",
+                "打开 Web 控制台（无响应）",
                 false,
                 Some(win_theme::GLYPH_GLOBE),
             );
@@ -441,7 +441,7 @@ fn show_menu(hwnd: HWND) {
         if status.pairing_attention() {
             add(
                 IDM_PAIRING,
-                "Approve pairing request…",
+                "批准配对请求…",
                 false,
                 Some(win_theme::GLYPH_APPROVE),
             );
@@ -450,13 +450,13 @@ fn show_menu(hwnd: HWND) {
             0 => {}
             1 => add(
                 IDM_DISPLAYS,
-                "Release kept display…",
+                "释放保留的显示器…",
                 false,
                 Some(win_theme::GLYPH_DISPLAY),
             ),
             n => add(
                 IDM_DISPLAYS,
-                &format!("Release {n} kept displays…"),
+                &format!("释放 {n} 个保留的显示器…"),
                 false,
                 Some(win_theme::GLYPH_DISPLAY),
             ),
@@ -468,23 +468,23 @@ fn show_menu(hwnd: HWND) {
             if startable {
                 add(
                     IDM_START,
-                    "Start host",
+                    "启动主机",
                     false,
                     Some(win_theme::GLYPH_SHIELD),
                 );
             }
             if running {
-                add(IDM_STOP, "Stop host", false, Some(win_theme::GLYPH_SHIELD));
+                add(IDM_STOP, "停止主机", false, Some(win_theme::GLYPH_SHIELD));
                 add(
                     IDM_RESTART,
-                    "Restart host",
+                    "重启主机",
                     false,
                     Some(win_theme::GLYPH_SHIELD),
                 );
             } else if matches!(status, TrayStatus::Error(_)) {
                 add(
                     IDM_RESTART,
-                    "Restart host",
+                    "重启主机",
                     false,
                     Some(win_theme::GLYPH_SHIELD),
                 );
@@ -492,12 +492,12 @@ fn show_menu(hwnd: HWND) {
         }
         add(
             IDM_LOGS,
-            "Open logs folder",
+            "打开日志文件夹",
             false,
             Some(win_theme::GLYPH_FOLDER),
         );
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        add(IDM_EXIT, "Exit tray", false, Some(win_theme::GLYPH_POWER));
+        add(IDM_EXIT, "退出托盘", false, Some(win_theme::GLYPH_POWER));
 
         let mut pt = Default::default();
         let _ = GetCursorPos(&mut pt);

@@ -127,23 +127,23 @@ UninstallDisplayIcon={app}\punktfunk.ico
 ChangesEnvironment=yes
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Messages]
 ; Shown when MinVersion rejects the OS — name the actual requirement instead of Inno's generic
 ; "requires Windows version 10.0.22621" (users on Windows 10 LTSC hit this; see the pf-vdisplay
 ; IddCx 1.10 note at MinVersion above).
-WinVersionTooLowError=Punktfunk Host requires Windows 11 22H2 (build 22621) or newer.%n%nIts virtual display driver needs the IddCx 1.10 framework, which is not available on older Windows — including all editions of Windows 10 (LTSC too) and Windows 11 21H2.
+WinVersionTooLowError=Punktfunk Host 需要 Windows 11 22H2（内部版本 22621）或更高版本。%n%n它的虚拟显示器驱动依赖 IddCx 1.10 框架，更早的 Windows 均不提供——包括所有版本的 Windows 10（含 LTSC）和 Windows 11 21H2。
 
 [Tasks]
 #ifdef WithDriver
-Name: "installdriver"; Description: "Install the pf-vdisplay virtual display driver (required for native-resolution streaming)"
+Name: "installdriver"; Description: "安装 pf-vdisplay 虚拟显示器驱动（原生分辨率串流必需）"
 #endif
 #ifdef WithGamepad
-Name: "installgamepad"; Description: "Install the virtual gamepad drivers (DualSense / DualShock 4 / Xbox 360 - no ViGEmBus needed)"
+Name: "installgamepad"; Description: "安装虚拟手柄驱动（DualSense / DualShock 4 / Xbox 360——无需 ViGEmBus）"
 #endif
 #ifdef WithVkLayer
-Name: "installhdrlayer"; Description: "Install the HDR Vulkan layer (lets Vulkan games like Doom use HDR on the virtual display)"
+Name: "installhdrlayer"; Description: "安装 HDR Vulkan 层（让 Doom 等 Vulkan 游戏在虚拟显示器上使用 HDR）"
 #endif
 ; Host-config choice, applied via `service install --gamestream=on|off` (writes PUNKTFUNK_HOST_CMD
 ; in host.env; a hand-customized value is left alone). Checked = the Moonlight-compatible unified
@@ -160,17 +160,17 @@ Name: "installhdrlayer"; Description: "Install the HDR Vulkan layer (lets Vulkan
 ; Turning it on unattended is `/MERGETASKS="gamestream"`; on an UPGRADE this task is inert either
 ; way (GamestreamParam omits the flag unless FreshHostInstall), so an existing host keeps whatever
 ; host.env already says - changing it afterwards is `service install --gamestream=on|off`.
-Name: "gamestream"; Description: "Enable GameStream (Moonlight) compatibility - lets stock Moonlight clients connect (uses legacy plain-HTTP pairing; for trusted LANs)"; Flags: unchecked
+Name: "gamestream"; Description: "启用 GameStream（Moonlight）兼容——允许原版 Moonlight 客户端连接（使用旧式明文 HTTP 配对，仅限可信局域网）"; Flags: unchecked
 ; Firewall scope, forwarded as `--allow-public-network` to `service install` / `web setup`. Unchecked
 ; (default) = accept connections on Private + Domain networks only (the trusted-network profiles
 ; punktfunk is meant for). Check ONLY for a network you trust that Windows classifies as Public (e.g.
 ; some headless / no-gateway LAN setups) - it opens the streaming + console ports on Public too.
-Name: "allowpublicfw"; Description: "Allow connections on Public networks (only for a trusted network Windows marks as Public)"; Flags: unchecked
-Name: "startservice"; Description: "Start the Punktfunk Host service now (also starts on every boot)"
+Name: "allowpublicfw"; Description: "允许在公用网络上接受连接（仅用于你信任、但被 Windows 标记为公用网络的环境）"; Flags: unchecked
+Name: "startservice"; Description: "立即启动 Punktfunk Host 服务（每次开机也会自动启动）"
 ; The per-user status tray (punktfunk-tray.exe): shows running/stopped/failed at a glance and
 ; offers open-console / start / stop / restart without a terminal. HKLM Run = every user who signs
 ; in to this host box gets one (each session keeps exactly one via a Local\ mutex).
-Name: "trayicon"; Description: "Show the Punktfunk status icon in the notification area at sign-in"
+Name: "trayicon"; Description: "登录时在通知区域显示 Punktfunk 状态图标"
 
 [Files]
 Source: "{#BinDir}\punktfunk-host.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -273,21 +273,21 @@ Root: HKLM64; Subkey: "SOFTWARE\Khronos\Vulkan\ImplicitLayers"; ValueType: dword
 [Run]
 #ifdef WithDriver
 Filename: "{app}\punktfunk-host.exe"; Parameters: "driver install --dir ""{tmp}\pfvdisplay"""; WorkingDir: "{app}"; \
-  StatusMsg: "Installing the pf-vdisplay virtual display driver..."; \
+  StatusMsg: "正在安装 pf-vdisplay 虚拟显示器驱动..."; \
   Flags: runhidden waituntilterminated; Tasks: installdriver
 #endif
 #ifdef WithGamepad
 Filename: "{app}\punktfunk-host.exe"; Parameters: "driver install --gamepad --dir ""{tmp}\gamepad"""; WorkingDir: "{app}"; \
-  StatusMsg: "Installing the virtual gamepad drivers..."; \
+  StatusMsg: "正在安装虚拟手柄驱动..."; \
   Flags: runhidden waituntilterminated; Tasks: installgamepad
 #endif
 ; Register (or re-point, on upgrade - idempotent) the SYSTEM service from its FINAL {app} location:
 ; service install records current_exe() as the SCM binPath, so it must run from {app}, not {tmp}.
 ; --gamestream=on|off carries the wizard's GameStream task choice into host.env's PUNKTFUNK_HOST_CMD.
 Filename: "{app}\punktfunk-host.exe"; Parameters: "service install {code:GamestreamParam}{code:PublicFwParam}"; WorkingDir: "{app}"; \
-  StatusMsg: "Registering the Punktfunk Host service..."; Flags: runhidden waituntilterminated
+  StatusMsg: "正在注册 Punktfunk 主机服务..."; Flags: runhidden waituntilterminated
 Filename: "{app}\punktfunk-host.exe"; Parameters: "service start"; WorkingDir: "{app}"; \
-  StatusMsg: "Starting the Punktfunk Host service..."; Flags: runhidden waituntilterminated; Tasks: startservice
+  StatusMsg: "正在启动 Punktfunk 主机服务..."; Flags: runhidden waituntilterminated; Tasks: startservice
 #ifdef WithWeb
 ; Provision the console: write the ACL'd login password, open TCP 47992, and delete the legacy
 ; PunktfunkWeb scheduled task (the console runs as a supervised child of the host service now — the
@@ -296,7 +296,7 @@ Filename: "{app}\punktfunk-host.exe"; Parameters: "service start"; WorkingDir: "
 ; on a fresh install. Order note: StopBunRuntimes DISABLED any legacy task before the copy, so it
 ; cannot respawn between the service start above and this delete.
 Filename: "{app}\punktfunk-host.exe"; Parameters: "web setup {code:WebSetupParams}{code:PublicFwParam}"; WorkingDir: "{app}"; \
-  StatusMsg: "Setting up the Punktfunk web console..."; Flags: runhidden waituntilterminated
+  StatusMsg: "正在配置 Punktfunk Web 控制台..."; Flags: runhidden waituntilterminated
 #endif
 #ifdef WithScripting
 ; Register the plugin/script runner's scheduled task (boot, restart-on-failure) but leave it
@@ -309,7 +309,7 @@ Filename: "{app}\punktfunk-host.exe"; Parameters: "web setup {code:WebSetupParam
 ; Best-effort (-ErrorAction SilentlyContinue): a task hiccup never fails the whole install. No braces
 ; in the command, so no Inno {{ }} escaping needed.
 Filename: "powershell.exe"; Parameters: "{code:ScriptingRegisterParams}"; \
-  StatusMsg: "Registering the Punktfunk script runner..."; Flags: runhidden waituntilterminated
+  StatusMsg: "正在注册 Punktfunk 脚本运行器..."; Flags: runhidden waituntilterminated
 #endif
 #if defined(WithWeb) || defined(WithScripting)
 ; Put back what StopBunRuntimes disabled to unlock bun.exe. Deliberately the LAST [Run] entry that
@@ -318,7 +318,7 @@ Filename: "powershell.exe"; Parameters: "{code:ScriptingRegisterParams}"; \
 ; switch an operator's plugin runner off on every upgrade. Skipped entirely when neither task was
 ; enabled beforehand (a fresh install), so it can't enable anything the user never asked for.
 Filename: "powershell.exe"; Parameters: "{code:RestoreTasksParams}"; \
-  StatusMsg: "Restoring the console + script runner tasks..."; \
+  StatusMsg: "正在恢复控制台与脚本运行器任务..."; \
   Flags: runhidden waituntilterminated; Check: NeedsTaskRestore
 #endif
 ; Launch the status tray as the SIGNED-IN user (not the elevated install user) right away, so the
@@ -428,11 +428,10 @@ begin
     own logs/status too. The runtime re-checks live, so installing Steam later just works. }
   if not SteamAudioDriversPresent() then
     SuppressibleMsgBox(
-      'Steam does not appear to be installed on this PC.' + #13#10 + #13#10 +
-      'Punktfunk uses Steam''s streaming audio drivers for game audio and microphone ' +
-      'passthrough (Steam only needs to be installed - it never has to run). Without it, ' +
-      'this host streams video only.' + #13#10 + #13#10 +
-      'You can install Steam at any time; the host picks it up automatically.',
+      '这台电脑似乎没有安装 Steam。' + #13#10 + #13#10 +
+      'Punktfunk 使用 Steam 的串流音频驱动来传输游戏音频和麦克风回传' +
+      '（Steam 只需安装，无需运行）。没有它，本主机仅串流视频。' + #13#10 + #13#10 +
+      '你可以随时安装 Steam，主机会自动识别启用。',
       mbInformation, MB_OK, IDOK);
   Found := '';
   if StreamHostEnabled('SunshineService') then Found := Found + '    - Sunshine' + #13#10;
@@ -449,14 +448,13 @@ begin
     Result := SuppressibleMsgBox(
       { NB: keep #13#10 off the START of a line - ISPP reads a leading '#' as a preprocessor
         directive and aborts the compile with "Unknown preprocessor directive". }
-      'Another game-streaming host is installed on this PC and set to start automatically:' + #13#10#13#10 + Found + #13#10 +
-      'Running Punktfunk alongside Sunshine / Apollo / other Moonlight-compatible hosts is NOT ' +
-      'supported. They bind the same GameStream network ports (47984, 47989, 47998-48010) and ' +
-      'install a conflicting virtual-display driver, which causes pairing failures, "address ' +
-      'already in use" errors and capture glitches.' + #13#10#13#10 +
-      'Stop and disable its service (or uninstall it) before using Punktfunk. A host that is ' +
-      'installed but disabled does not clash and is not reported here.' + #13#10#13#10 +
-      'Continue with the installation anyway?',
+      '这台电脑上已安装另一个游戏串流主机，并设置为自动启动：' + #13#10#13#10 + Found + #13#10 +
+      '不支持将 Punktfunk 与 Sunshine / Apollo / 其他兼容 Moonlight 的主机同时运行。' +
+      '它们会绑定相同的 GameStream 网络端口（47984、47989、47998-48010），并安装冲突的' +
+      '虚拟显示器驱动，从而导致配对失败、"地址已被占用"错误和画面捕获异常。' + #13#10#13#10 +
+      '请在使用 Punktfunk 之前停止并禁用对应服务（或将其卸载）。仅安装但未启用的主机' +
+      '不会冲突，也不会在此列出。' + #13#10#13#10 +
+      '仍要继续安装吗？',
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
 end;
 
@@ -543,11 +541,11 @@ var
 begin
   FreshWebInstall := not FileExists(WebPasswordPath);
   WebPwPage := CreateInputQueryPage(wpSelectTasks,
-    'Web console', 'Set the Punktfunk web console login password',
-    'The management console is served on https://this-computer:47992 and is login-gated. Keep the ' +
-    'secure password generated below (it is shown again on the final page) or enter your own - you ' +
-    'can change it later in %ProgramData%\punktfunk\web-password.');
-  WebPwPage.Add('Console password:', False);   { visible, so the admin can read the generated default }
+    'Web 控制台', '设置 Punktfunk Web 控制台登录密码',
+    '管理控制台通过 https://本机地址:47992 提供服务，需要登录。请保留下方生成的' +
+    '安全密码（最后一页会再次显示），或输入你自己的密码——之后可在 ' +
+    '%ProgramData%\punktfunk\web-password 中修改。');
+  WebPwPage.Add('控制台密码：', False);   { visible, so the admin can read the generated default }
   DefaultPw := '';
   GenerateRandomWebPassword(DefaultPw);
   WebPwPage.Values[0] := DefaultPw;
@@ -564,7 +562,7 @@ begin
   Result := True;
   if (CurPageID = WebPwPage.ID) and (Trim(WebPwPage.Values[0]) = '') then
   begin
-    MsgBox('Please enter a web console password (it cannot be empty).', mbError, MB_OK);
+    MsgBox('请输入 Web 控制台密码（不能为空）。', mbError, MB_OK);
     Result := False;
   end;
 end;
@@ -573,8 +571,8 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if (CurPageID = wpFinished) and FreshWebInstall then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
-      'Web console:  https://<this-PC-IP>:47992' + #13#10 +
-      'Login password:  ' + Trim(WebPwPage.Values[0]);
+      'Web 控制台：  https://<本机IP>:47992' + #13#10 +
+      '登录密码：  ' + Trim(WebPwPage.Values[0]);
 end;
 
 function WebSetupParams(Param: String): String;

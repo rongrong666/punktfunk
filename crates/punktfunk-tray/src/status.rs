@@ -68,27 +68,26 @@ impl TrayStatus {
     /// One-line headline for the tooltip / the disabled menu header.
     pub fn headline(&self) -> String {
         match self {
-            TrayStatus::NotInstalled => "punktfunk host — not installed".into(),
-            TrayStatus::Stopped => "punktfunk host — stopped".into(),
-            TrayStatus::Starting => "punktfunk host — starting…".into(),
-            TrayStatus::Degraded => "punktfunk host — running (status unavailable)".into(),
-            TrayStatus::Error(e) => format!("punktfunk host — failed ({e})"),
+            TrayStatus::NotInstalled => "punktfunk 主机——未安装".into(),
+            TrayStatus::Stopped => "punktfunk 主机——已停止".into(),
+            TrayStatus::Starting => "punktfunk 主机——正在启动…".into(),
+            TrayStatus::Degraded => "punktfunk 主机——运行中（状态不可用）".into(),
+            TrayStatus::Error(e) => format!("punktfunk 主机——故障（{e}）"),
             TrayStatus::Running(s) => match (&s.session, self.is_streaming()) {
                 (Some(sess), true) => format!(
-                    "punktfunk host {} — streaming {}×{}@{}",
+                    "punktfunk 主机 {}——正在串流 {}×{}@{}",
                     s.version, sess.width, sess.height, sess.fps
                 ),
-                (_, true) => format!("punktfunk host {} — streaming", s.version),
+                (_, true) => format!("punktfunk 主机 {}——正在串流", s.version),
                 // Idle, but surface a kept (lingering/pinned) display: it — and, under an
                 // exclusive topology, your physical monitors — is being held. Release it from
                 // the console.
                 _ if s.kept_displays > 0 => format!(
-                    "punktfunk host {} — idle · {} display{} kept",
+                    "punktfunk 主机 {}——空闲 · 保留 {} 个显示器",
                     s.version,
-                    s.kept_displays,
-                    if s.kept_displays == 1 { "" } else { "s" }
+                    s.kept_displays
                 ),
-                _ => format!("punktfunk host {} — idle", s.version),
+                _ => format!("punktfunk 主机 {}——空闲", s.version),
             },
         }
     }
@@ -477,7 +476,7 @@ mod tests {
         let s: Summary = serde_json::from_str(json).expect("unknown fields are ignored");
         assert_eq!(
             TrayStatus::Running(s).headline(),
-            "punktfunk host 0.5.1 — idle"
+            "punktfunk 主机 0.5.1——空闲"
         );
     }
 
@@ -485,18 +484,18 @@ mod tests {
     fn headline_shows_session_and_reason() {
         assert_eq!(
             TrayStatus::Running(summary(true)).headline(),
-            "punktfunk host 0.5.1 — streaming 2560×1440@120"
+            "punktfunk 主机 0.5.1——正在串流 2560×1440@120"
         );
         assert_eq!(
             TrayStatus::Running(summary(false)).headline(),
-            "punktfunk host 0.5.1 — idle"
+            "punktfunk 主机 0.5.1——空闲"
         );
         assert!(TrayStatus::Error("exit code 3".into())
             .headline()
             .contains("exit code 3"));
         assert!(TrayStatus::Degraded
             .headline()
-            .contains("status unavailable"));
+            .contains("状态不可用"));
     }
 
     /// A live session means streaming even if the host's flag says otherwise — a host from before
@@ -510,7 +509,7 @@ mod tests {
         assert!(st.is_streaming());
         assert_eq!(
             st.headline(),
-            "punktfunk host 0.5.1 — streaming 2560×1440@120"
+            "punktfunk 主机 0.5.1——正在串流 2560×1440@120"
         );
         // No session and no flag is still idle.
         assert!(!TrayStatus::Running(summary(false)).is_streaming());
