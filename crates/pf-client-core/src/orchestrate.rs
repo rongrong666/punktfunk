@@ -288,20 +288,20 @@ impl PlanError {
     pub fn message(&self) -> String {
         match self {
             PlanError::AmbiguousHost(r) => {
-                format!("More than one saved host is called \"{r}\" — open Punktfunk and pick one.")
+                format!("已保存的主机中有多个名为 \"{r}\"——请打开 Punktfunk 手动选择。")
             }
             PlanError::UnresolvableHost(r) => {
-                format!("No saved host matches \"{r}\".")
+                format!("没有与 \"{r}\" 匹配的已保存主机。")
             }
             PlanError::PinConflict { host } => format!(
-                "That link's fingerprint doesn't match the one saved for {host} — it's out of \
-                 date, or it isn't that host. Nothing was connected."
+                "该链接的指纹与为 {host} 保存的指纹不匹配——链接已过期，\
+                 或并非该主机。未建立任何连接。"
             ),
             PlanError::UnknownProfile(p) => {
-                format!("That link asks for a settings profile called \"{p}\", which doesn't exist here.")
+                format!("该链接要求使用名为 \"{p}\" 的设置配置，但本机不存在该配置。")
             }
             PlanError::AmbiguousProfile(p) => {
-                format!("More than one settings profile is called \"{p}\" — rename one, or use its id in the link.")
+                format!("有多个设置配置名为 \"{p}\"——请重命名其一，或在链接中使用配置 ID。")
             }
         }
     }

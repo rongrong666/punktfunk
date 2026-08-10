@@ -384,7 +384,7 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
             // Rule 2 of §3: never preempt a live session. Only this layer knows one is running,
             // which is why the brain leaves the check here.
             if matches!(screen_now, Screen::Stream | Screen::Connecting) {
-                return refuse("A session is already running \u{2014} end it first.".into());
+                return refuse("已有会话正在运行 \u{2014} 请先结束它。".into());
             }
             let known = KnownHosts::load();
             let plan = pf_client_core::orchestrate::plan_from_link(
@@ -448,12 +448,12 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
                         launch: u.launch.clone(),
                     };
                     set_status.call(format!(
-                        "{name} isn't paired with this device yet \u{2014} pair it to continue."
+                        "{name} 尚未与本设备配对 \u{2014} 请先完成配对再继续。"
                     ));
                     set_screen.call(Screen::Pair);
                 }
                 Ok(PlanOutcome::Unsupported(route)) => refuse(format!(
-                    "Punktfunk can't open \u{201c}{}\u{201d} links yet.",
+                    "Punktfunk 暂时无法打开 \u{201c}{}\u{201d} 链接。",
                     route.as_str()
                 )),
                 Err(e) => refuse(e.message()),

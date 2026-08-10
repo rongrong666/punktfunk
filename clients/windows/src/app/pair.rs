@@ -31,7 +31,7 @@ pub(crate) fn pair_page(props: &Svc, cx: &mut RenderCx) -> Element {
             live_pin.clone(),
             target.clone(),
         );
-        button("Pair & Connect")
+        button("配对并连接")
             .accent()
             .icon(Symbol::Accept)
             .on_click(move || {
@@ -77,7 +77,7 @@ pub(crate) fn pair_page(props: &Svc, cx: &mut RenderCx) -> Element {
     };
     let cancel_btn = {
         let ss = set_screen.clone();
-        button("Cancel")
+        button("取消")
             .icon(Symbol::Cancel)
             .on_click(move || ss.call(Screen::Hosts))
     };
@@ -85,7 +85,7 @@ pub(crate) fn pair_page(props: &Svc, cx: &mut RenderCx) -> Element {
     // the host parks until the operator approves this device in its console (delegated approval).
     let request_btn = {
         let (svc, target2) = (props.clone(), target.clone());
-        button("Request access without a PIN")
+        button("免 PIN 请求访问")
             .icon(Symbol::Send)
             .on_click(move || request_access(&svc, &target2))
             .horizontal_alignment(HorizontalAlignment::Stretch)
@@ -97,7 +97,7 @@ pub(crate) fn pair_page(props: &Svc, cx: &mut RenderCx) -> Element {
                 .grid_column(0)
                 .vertical_alignment(VerticalAlignment::Center),
             vstack((
-                text_block(format!("Pair with {}", target.name))
+                text_block(format!("与 {} 配对", target.name))
                     .font_size(20.0)
                     .semibold(),
                 text_block(format!("{}:{}", target.addr, target.port))
@@ -110,10 +110,10 @@ pub(crate) fn pair_page(props: &Svc, cx: &mut RenderCx) -> Element {
             .margin(edges(12.0, 0.0, 0.0, 0.0)),
         ))
         .columns([GridLength::Auto, GridLength::Star(1.0)]),
-        InfoBar::new("Arm pairing on the host")
+        InfoBar::new("请在主机上启用配对")
             .message(
-                "On the host's console or web console, start pairing — it shows a 4-digit PIN. \
-                 Enter it below within 90 seconds.",
+                "在主机的主机控制台或 Web 控制台中启动配对——它会显示一个 4 位 PIN 码。\
+                 请在 90 秒内输入到下方。",
             )
             .informational()
             .is_closable(false),
@@ -132,8 +132,8 @@ pub(crate) fn pair_page(props: &Svc, cx: &mut RenderCx) -> Element {
             }),
         hstack((pair_btn, cancel_btn)).spacing(8.0),
         text_block(
-            "Don\u{2019}t have a PIN? Request access instead and approve this device on the host \
-             (its console or web UI) \u{2014} no PIN needed.",
+            "没有 PIN 码？可改为请求访问，并在主机上（其控制台或 Web 界面）\
+             批准本设备\u{2014}\u{2014}无需 PIN 码。",
         )
         .font_size(12.0)
         .foreground(ThemeRef::SecondaryText),
