@@ -1671,11 +1671,11 @@ fn pump(
                     // We closed it, or the host closed cleanly (an operator "End", or the session
                     // simply finishing). Both were asked for.
                     End::Local | End::HostEnded => None,
-                    End::HostError => Some("The host ended the session with an error".to_string()),
-                    End::Lost => Some("Connection lost".to_string()),
+                    End::HostError => Some("主机因错误结束了会话".to_string()),
+                    End::Lost => Some("连接已丢失".to_string()),
                     // No verdict (an older core, or the close raced the read): keep the wording
                     // this arm has always used rather than inventing a new one.
-                    End::None => Some("Host ended the session".to_string()),
+                    End::None => Some("主机已结束会话".to_string()),
                 };
             }
             Err(e) => break Some(format!("session: {e:?}")),

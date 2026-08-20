@@ -12,28 +12,28 @@ use std::collections::HashMap;
 use windows_reactor::*;
 
 /// Overflow-menu item labels — `on_item_clicked` reports the clicked item by its text.
-const MENU_CONNECT: &str = "Connect";
-const MENU_LIBRARY: &str = "Browse library\u{2026}";
-const MENU_SPEED: &str = "Test network speed\u{2026}";
-const MENU_WAKE: &str = "Wake host";
+const MENU_CONNECT: &str = "连接";
+const MENU_LIBRARY: &str = "浏览游戏库\u{2026}";
+const MENU_SPEED: &str = "测试网络速度\u{2026}";
+const MENU_WAKE: &str = "唤醒主机";
 /// One entry for every per-host property (name, address, MAC, clipboard sharing) — the
 /// Apple client's add/edit sheet. A menu item per field read as clutter and buried the ones
 /// that matter.
-const MENU_EDIT: &str = "Edit\u{2026}";
+const MENU_EDIT: &str = "编辑\u{2026}";
 /// The per-profile families nest in submenus. Submenu LEAVES are what the shared click
 /// callback reports (the backend wires clicks recursively and hands back the leaf text):
 /// "Connect with"'s leaves are the bare profile names + [`SUB_WITH_DEFAULT`]; "Pin tiles"'s
 /// leaves keep a verb prefix, which is what tells the two families apart in the callback.
 /// (A profile literally named like a fixed entry, e.g. "Connect", is shadowed by it — the
 /// same last-wins rule the scope dropdown documents.)
-const SUB_WITH: &str = "Connect with";
-const SUB_WITH_DEFAULT: &str = "Default settings";
-const SUB_PIN: &str = "Pin tiles";
-const MENU_COPY_LINK: &str = "Copy link";
-const MENU_SHORTCUT: &str = "Create shortcut\u{2026}";
-const MENU_PIN: &str = "Pin tile: ";
-const MENU_UNPIN: &str = "Unpin tile: ";
-const MENU_FORGET: &str = "Forget\u{2026}";
+const SUB_WITH: &str = "使用配置连接";
+const SUB_WITH_DEFAULT: &str = "默认设置";
+const SUB_PIN: &str = "固定磁贴";
+const MENU_COPY_LINK: &str = "复制链接";
+const MENU_SHORTCUT: &str = "创建快捷方式\u{2026}";
+const MENU_PIN: &str = "固定磁贴: ";
+const MENU_UNPIN: &str = "取消固定: ";
+const MENU_FORGET: &str = "忘记\u{2026}";
 
 /// Whether the console (gamepad) UI is available in this build: the session binary ships
 /// its Skia `ui` feature on x64 only (no skia prebuilts for aarch64 yet) — the entry
@@ -224,7 +224,7 @@ fn status_row_with(
                 .into(),
         );
         items.push(
-            text_block(if online { "Online" } else { "Offline" })
+            text_block(if online { "在线" } else { "离线" })
                 .font_size(11.0)
                 .foreground(ThemeRef::SecondaryText)
                 .vertical_alignment(VerticalAlignment::Center)
@@ -348,7 +348,7 @@ fn edit_editor(
             .iter()
             .find(|h| h.fp_hex == fp)
             .and_then(|h| h.profile_id.clone());
-        let mut names = vec!["Default settings".to_string()];
+        let mut names = vec!["默认设置".to_string()];
         let mut ids: Vec<String> = vec![String::new()];
         for p in &catalog.profiles {
             names.push(p.name.clone());
@@ -362,7 +362,7 @@ fn edit_editor(
             .unwrap_or(0);
         let fp = fp.to_string();
         ComboBox::new(names)
-            .header("Profile")
+            .header("配置方案")
             .selected_index(current as i32)
             .on_selection_changed(move |i: i32| {
                 let Some(id) = ids.get(i.max(0) as usize) else {
@@ -408,23 +408,23 @@ fn edit_editor(
     };
     let modal = dialog_surface(scroll_view(
         vstack((
-            text_block(format!("Edit \u{201c}{initial_name}\u{201d}"))
+            text_block(format!("编辑 \u{201c}{initial_name}\u{201d}"))
                 .font_size(20.0)
                 .bold(),
-            field("Name", name0, "e.g. Living Room", name_draft),
-            field("Address", addr0, "IP or hostname", addr_draft),
-            field("Port", port0, "9777", port_draft),
+            field("名称", name0, "例如：客厅", name_draft),
+            field("地址", addr0, "IP 或主机名", addr_draft),
+            field("端口", port0, "9777", port_draft),
             field(
-                "MAC (Wake-on-LAN)",
+                "MAC（网络唤醒）",
                 mac0,
-                "auto-filled when known",
+                "已知时自动填写",
                 mac_draft,
             ),
             vstack((
                 profile_picker,
                 text_block(
-                    "The settings a plain click on this host uses. \u{201c}Connect with\u{201d} \
-                     in the tile\u{2019}s menu overrides it for one session without changing it.",
+                    "直接点击此主机时使用的设置。磁贴菜单中的\u{201c}使用配置连接\u{201d}\
+                     可临时覆盖一次，不会修改此处的绑定。",
                 )
                 .font_size(12.0)
                 .foreground(ThemeRef::SecondaryText)
@@ -434,13 +434,13 @@ fn edit_editor(
             .spacing(4.0),
             vstack((
                 ToggleSwitch::new(clip0)
-                    .header("Share clipboard with this host")
-                    .on_content("On")
-                    .off_content("Off")
+                    .header("与此主机共享剪贴板")
+                    .on_content("开")
+                    .off_content("关")
                     .on_toggled(move |v: bool| clip_draft.set(v)),
                 text_block(
-                    "Copy on one machine, paste on the other. Off for every host until you \
-                     turn it on here; the host must allow it too.",
+                    "在一台机器上复制，在另一台机器上粘贴。默认对所有主机关闭，需在此\
+                     开启；主机端也必须允许剪贴板共享。",
                 )
                 .font_size(12.0)
                 .foreground(ThemeRef::SecondaryText)
@@ -449,11 +449,11 @@ fn edit_editor(
             ))
             .spacing(4.0),
             hstack((
-                button("Save")
+                button("保存")
                     .accent()
                     .icon(Symbol::Accept)
                     .on_click(commit),
-                button("Cancel")
+                button("取消")
                     .subtle()
                     .on_click(move || set_edit.call(None)),
             ))
@@ -577,7 +577,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
         grid((
             vstack((
                 text_block("Punktfunk").font_size(30.0).bold(),
-                text_block("Stream from a host on your network.")
+                text_block("从网络中的主机串流。")
                     .wrap()
                     .foreground(ThemeRef::SecondaryText),
             ))
@@ -585,7 +585,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             .grid_column(0)
             .vertical_alignment(VerticalAlignment::Center),
             hstack({
-                let mut actions: Vec<Element> = vec![button("Add host")
+                let mut actions: Vec<Element> = vec![button("添加主机")
                     .icon(Symbol::Add)
                     .accent()
                     .on_click({
@@ -597,14 +597,14 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 // re-query interval off to as much as an hour — so a host that appeared since
                 // startup, or whose announcement was lost to multicast, may need an actual ask.
                 actions.push(
-                    icon_btn("Scan the network for hosts again", Symbol::Refresh)
+                    icon_btn("重新扫描网络中的主机", Symbol::Refresh)
                         .on_click({
                             let (c, st) = (ctx.clone(), set_status.clone());
                             move || {
                                 if let Some(r) = c.shared.rescan.lock().unwrap().as_ref() {
                                     r.request();
                                 }
-                                st.call("Scanning the network\u{2026}".to_string());
+                                st.call("正在扫描网络\u{2026}".to_string());
                             }
                         })
                         .into(),
@@ -614,7 +614,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 if CONSOLE_UI_AVAILABLE {
                     actions.push(
                         icon_btn(
-                            "Console UI \u{2014} the controller-driven couch interface",
+                            "控制台 UI\u{2014}\u{2014}手柄驱动的客厅界面",
                             Symbol::Play,
                         )
                         .on_click({
@@ -627,7 +627,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     );
                 }
                 actions.push(
-                    icon_btn("Keyboard shortcuts", Symbol::Keyboard)
+                    icon_btn("键盘快捷键", Symbol::Keyboard)
                         .on_click({
                             let ss = set_screen.clone();
                             move || ss.call(Screen::Help)
@@ -635,7 +635,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                         .into(),
                 );
                 actions.push(
-                    icon_btn("Settings", Symbol::Setting)
+                    icon_btn("设置", Symbol::Setting)
                         .on_click({
                             let (c, ss) = (ctx.clone(), set_screen.clone());
                             move || {
@@ -661,7 +661,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
 
     if !status.is_empty() {
         body.push(
-            InfoBar::new("Couldn't connect")
+            InfoBar::new("连接失败")
                 .message(status.to_string())
                 .error()
                 .is_closable(false)
@@ -672,7 +672,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
     // Saved (trusted/paired) hosts — reachable even when mDNS isn't. A saved host that's also
     // being advertised right now shows as Online (and is deduped out of the discovery section).
     if !known.hosts.is_empty() {
-        body.push(section("SAVED HOSTS"));
+        body.push(section("已保存的主机"));
         let mut tiles: Vec<Element> = Vec::new();
         // One catalog read per render, shared by every tile's menu and chip.
         let profiles: Vec<(String, String, Option<String>)> =
@@ -731,8 +731,8 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 button("")
                     .icon(Symbol::More)
                     .subtle()
-                    .tooltip("More options")
-                    .automation_name("More options")
+                    .tooltip("更多选项")
+                    .automation_name("更多选项")
                     .menu_flyout({
                         // Kept short deliberately, and in sections. It had grown into a list of
                         // everything, with the entries you actually reach for (connect, library,
@@ -891,7 +891,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     &k.os,
                     Some(online),
                     // Paired is the resting state — no chip; TOFU-only trust is worth one.
-                    (!k.paired).then_some(("Trusted", Pill::Info)),
+                    (!k.paired).then_some(("已信任", Pill::Info)),
                     // The dot carries the profile's own colour where it has one —
                     // that is what makes two bound hosts tell apart at a glance.
                     k.profile_id
@@ -999,7 +999,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     status_row_with(
                         &k.os,
                         Some(online),
-                        (!k.paired).then_some(("Trusted", Pill::Info)),
+                        (!k.paired).then_some(("已信任", Pill::Info)),
                         Some((name.as_str(), accent.clone())),
                     ),
                     Some(pinned_menu),
@@ -1017,7 +1017,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
     }
 
     // Discovered hosts not already saved above.
-    body.push(section("ON THIS NETWORK"));
+    body.push(section("本网络中的主机"));
     let discovered: Vec<&DiscoveredHost> = hosts
         .iter()
         .filter(|h| {
@@ -1032,7 +1032,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             card(
                 hstack((
                     ProgressRing::indeterminate().width(18.0).height(18.0),
-                    text_block("Searching the LAN\u{2026}").foreground(ThemeRef::SecondaryText),
+                    text_block("正在搜索局域网\u{2026}").foreground(ThemeRef::SecondaryText),
                 ))
                 .spacing(12.0),
             )
@@ -1056,7 +1056,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             let (badge, kind) = if h.pair == "required" {
                 ("PIN", Pill::Info)
             } else {
-                ("Open", Pill::Neutral)
+                ("开放", Pill::Neutral)
             };
             tiles.push(host_tile(
                 &format!("{}:{}", h.addr, h.port),
@@ -1086,15 +1086,15 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             .as_ref()
             .map(|(_, name)| {
                 format!(
-                    "Forget \u{201C}{name}\u{201D}? You'll need to pair (or trust) it again to \
-                     reconnect."
+                    "忘记 \u{201C}{name}\u{201D}？重新连接需要再次配对（或信任）\
+                     该主机。"
                 )
             })
             .unwrap_or_default();
-        ContentDialog::new("Remove saved host?")
+        ContentDialog::new("移除已保存的主机？")
             .content(content)
-            .primary_button_text("Remove")
-            .close_button_text("Cancel")
+            .primary_button_text("移除")
+            .close_button_text("取消")
             .is_open(pending.is_some())
             .on_closed(move |r: ContentDialogResult| {
                 if r == ContentDialogResult::Primary
@@ -1158,16 +1158,16 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
     };
     let modal = dialog_surface(
         vstack((
-            text_block("Add a host").font_size(20.0).bold(),
+            text_block("添加主机").font_size(20.0).bold(),
             text_block(
-                "Enter the host's IP address or name. Append :port only for a non-standard port \
-                 (the default is 9777).",
+                "输入主机的 IP 地址或名称。仅在使用非默认端口时才附加 :port\
+                 （默认端口为 9777）。",
             )
             .font_size(13.0)
             .wrap()
             .foreground(ThemeRef::SecondaryText),
             text_box(manual)
-                .header("Address")
+                .header("地址")
                 .placeholder_text("192.168.1.20  or  my-pc.local")
                 .on_text_changed({
                     let live = manual_live.clone();
@@ -1178,11 +1178,11 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 })
                 .margin(edges(0.0, 6.0, 0.0, 0.0)),
             hstack((
-                button("Connect")
+                button("连接")
                     .accent()
                     .icon(Symbol::Forward)
                     .on_click(connect_manual),
-                button("Cancel").on_click({
+                button("取消").on_click({
                     let sa = set_show_add.clone();
                     move || sa.call(false)
                 }),

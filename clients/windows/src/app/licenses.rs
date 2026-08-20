@@ -23,7 +23,7 @@ const APP_LICENSE: &str = concat!(
 const THIRD_PARTY_NOTICES: &str = include_str!("../../THIRD-PARTY-NOTICES.txt");
 
 pub(crate) fn licenses_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen>) -> Element {
-    let back_btn = button("Back").accent().icon(Symbol::Back).on_click({
+    let back_btn = button("返回").accent().icon(Symbol::Back).on_click({
         let (c, ss) = (ctx.clone(), set_screen.clone());
         move || {
             // Back RE-ENTERS the settings page — re-base its snapshot on the file, same
@@ -36,7 +36,7 @@ pub(crate) fn licenses_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen
     let app_card = card(
         vstack((
             text_block("Punktfunk").font_size(15.0).semibold(),
-            text_block("Licensed under MIT OR Apache-2.0, at your option.")
+            text_block("按 MIT 或 Apache-2.0 许可授权，由你选择。")
                 .font_size(12.0)
                 .wrap()
                 .foreground(ThemeRef::SecondaryText),
@@ -50,12 +50,12 @@ pub(crate) fn licenses_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen
 
     let natives_card = card(
         vstack((
-            text_block("Bundled components").font_size(15.0).semibold(),
+            text_block("捆绑组件").font_size(15.0).semibold(),
             text_block(
-                "SDL 3 (Zlib) and the Windows App SDK (Microsoft) are linked; their notices ship \
-                 in the installed licenses\\ folder. Video decoding uses Windows' own DXVA and \
-                 Vulkan Video, with OpenH264 and rav1d (both BSD-2-Clause) as the CPU fallback — \
-                 no FFmpeg is bundled.",
+                "链接了 SDL 3（Zlib）和 Windows App SDK（Microsoft），其许可声明随\
+                 安装目录下的 licenses\\ 文件夹提供。视频解码使用 Windows 自带的\
+                 DXVA 和 Vulkan Video，CPU 回退为 OpenH264 和 rav1d（均为\
+                 BSD-2-Clause）——未捆绑 FFmpeg。",
             )
             .font_size(12.0)
             .wrap()
@@ -66,7 +66,7 @@ pub(crate) fn licenses_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen
 
     let notices_card = card(
         vstack((
-            text_block("Rust crates").font_size(15.0).semibold(),
+            text_block("Rust 组件").font_size(15.0).semibold(),
             text_block(THIRD_PARTY_NOTICES)
                 .font_size(11.0)
                 .wrap()
@@ -76,12 +76,12 @@ pub(crate) fn licenses_page(ctx: &Arc<AppCtx>, set_screen: &AsyncSetState<Screen
     );
 
     page(vec![
-        page_header("Third-party licenses", back_btn),
+        page_header("第三方许可", back_btn),
         section("PUNKTFUNK"),
         app_card.into(),
-        section("BUNDLED"),
+        section("捆绑组件"),
         natives_card.into(),
-        section("OPEN SOURCE"),
+        section("开源组件"),
         notices_card.into(),
     ])
 }

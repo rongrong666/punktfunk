@@ -42,9 +42,9 @@ const RENDER_SCALES: &[f64] = &[0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0];
 /// A compact label for a render-scale multiplier: "Native" / "1.5×" / "2× (supersample)".
 fn render_scale_label(scale: f64) -> String {
     if scale == 1.0 {
-        "Native".to_string()
+        "原生".to_string()
     } else if scale > 1.0 {
-        format!("{scale}\u{00D7} (supersample)")
+        format!("{scale}\u{00D7}（超采样）")
     } else {
         format!("{scale}\u{00D7}")
     }
@@ -55,18 +55,18 @@ fn render_scale_label(scale: f64) -> String {
 // how the session's ladder reads "hardware", and near enough for the other two, which
 // `pf_client_core::video::migrate_decoder_pref` maps onto the entries below anyway.
 const DECODERS: &[(&str, &str)] = &[
-    ("auto", "Automatic (GPU, fall back to CPU)"),
-    ("native-vulkan", "Hardware (Vulkan Video)"),
-    ("native-d3d11va", "Hardware (Direct3D 11 / DXVA)"),
-    ("software", "Software (CPU)"),
+    ("auto", "自动（GPU，失败时回退 CPU）"),
+    ("native-vulkan", "硬件（Vulkan Video）"),
+    ("native-d3d11va", "硬件（Direct3D 11 / DXVA）"),
+    ("software", "软件（CPU）"),
 ];
 /// Audio channel presets: `(channel count, display label)`. The host clamps to what it can
 /// capture; the resolved count drives the decoder + WASAPI render layout.
-const AUDIO_CHANNELS: &[(u8, &str)] = &[(2, "Stereo"), (6, "5.1 Surround"), (8, "7.1 Surround")];
+const AUDIO_CHANNELS: &[(u8, &str)] = &[(2, "立体声"), (6, "5.1 环绕声"), (8, "7.1 环绕声")];
 /// Preferred-codec presets: `(stored value, display label)`. Soft — the host falls back if it
 /// can't encode the chosen codec.
 const CODECS: &[(&str, &str)] = &[
-    ("auto", "Automatic"),
+    ("auto", "自动"),
     ("hevc", "HEVC (H.265)"),
     ("h264", "H.264 (AVC)"),
     ("av1", "AV1"),
@@ -77,7 +77,7 @@ const CODECS: &[(&str, &str)] = &[
 /// Virtual-pad presets: `(stored value, display label)` — the pad the HOST creates. Same set the
 /// GTK client offers; "Automatic" resolves from the physical controller at connect.
 const GAMEPADS: &[(&str, &str)] = &[
-    ("auto", "Automatic (match the controller)"),
+    ("auto", "自动（匹配手柄）"),
     ("xbox360", "Xbox 360"),
     ("dualsense", "DualSense"),
     ("xboxone", "Xbox One"),
@@ -90,52 +90,52 @@ const GAMEPADS: &[(&str, &str)] = &[
 /// and quick-access presses land while streaming. The cross-client `system_buttons` key;
 /// Automatic forwards on desktop and stays local under Gaming Mode.
 const SYSTEM_BUTTONS: &[(&str, &str)] = &[
-    ("auto", "Automatic"),
-    ("forward", "Send to host"),
-    ("local", "This device"),
+    ("auto", "自动"),
+    ("forward", "发送到主机"),
+    ("local", "本设备"),
 ];
 /// The hold-Select guide gesture: `(stored value, display label)` — the cross-client
 /// `guide_gesture` key. Automatic arms it only where the raw press can't reach the host.
-const GUIDE_GESTURES: &[(&str, &str)] = &[("auto", "Automatic"), ("on", "On"), ("off", "Off")];
+const GUIDE_GESTURES: &[(&str, &str)] = &[("auto", "自动"), ("on", "开"), ("off", "关")];
 /// Stats-overlay tiers: `(stored value, display label)` — the cross-client verbosity ladder
 /// (Compact ⊂ Normal ⊂ Detailed); Ctrl+Alt+Shift+S cycles it live in the session window.
 const STATS_TIERS: &[(StatsVerbosity, &str)] = &[
-    (StatsVerbosity::Off, "Off"),
-    (StatsVerbosity::Compact, "Compact"),
-    (StatsVerbosity::Normal, "Normal"),
-    (StatsVerbosity::Detailed, "Detailed"),
+    (StatsVerbosity::Off, "关"),
+    (StatsVerbosity::Compact, "紧凑"),
+    (StatsVerbosity::Normal, "标准"),
+    (StatsVerbosity::Detailed, "详细"),
 ];
 /// Touch-input presets: `(stored value, display label)` — how a touchscreen's fingers drive
 /// the host. The cross-client set (Android/Apple); only meaningful on a touchscreen device.
 const TOUCH_MODES: &[(&str, &str)] = &[
-    ("trackpad", "Trackpad"),
-    ("pointer", "Direct pointer"),
-    ("touch", "Touch passthrough"),
+    ("trackpad", "触控板"),
+    ("pointer", "直接指针"),
+    ("touch", "触摸透传"),
 ];
 /// Physical-mouse presets: `(stored value, display label)` — capture (pointer lock,
 /// relative, for games) vs desktop (uncaptured absolute pointer, for remote desktop
 /// work). Ctrl+Alt+Shift+M flips the model live in-stream.
 const MOUSE_MODES: &[(&str, &str)] = &[
-    ("capture", "Capture (games)"),
-    ("desktop", "Desktop (absolute)"),
+    ("capture", "捕获（游戏）"),
+    ("desktop", "桌面（绝对坐标）"),
 ];
 /// Presentation intent: `(stored value, display label)` — the `present_priority` key the
 /// Apple and Android clients share, so one profile means the same thing everywhere.
 const PRESENT_PRIORITIES: &[(&str, &str)] =
-    &[("latency", "Lowest latency"), ("smooth", "Smoothness")];
+    &[("latency", "最低延迟"), ("smooth", "流畅度")];
 /// Smoothness buffer depth in frames: `(stored value, display label)`. `0` = Automatic,
 /// which resolves to 2 (`PresentPriority::resolve`). No millisecond hints — the cost is
 /// one refresh per frame, and the refresh isn't known here when the mode is Native.
 const SMOOTH_BUFFERS: &[(u8, &str)] = &[
-    (0, "Automatic"),
-    (1, "1 frame"),
-    (2, "2 frames"),
-    (3, "3 frames"),
+    (0, "自动"),
+    (1, "1 帧"),
+    (2, "2 帧"),
+    (3, "3 帧"),
 ];
 /// Host compositor presets: `(stored value, display label)`. Advisory — the host falls back to
 /// auto-detect when the choice is unavailable. Only meaningful against a Linux host.
 const COMPOSITORS: &[(&str, &str)] = &[
-    ("auto", "Automatic"),
+    ("auto", "自动"),
     ("kwin", "KWin"),
     ("wlroots", "wlroots (Sway/Hyprland)"),
     ("mutter", "Mutter (GNOME)"),
@@ -147,15 +147,15 @@ const COMPOSITORS: &[(&str, &str)] = &[
 /// telling profiles apart at a glance on a host tile, and the schema still accepts any
 /// `#RRGGBB` a hand-edit writes.
 const SWATCHES: &[(&str, &str)] = &[
-    ("", "None"),
-    ("#e01b24", "Red"),
-    ("#ff7800", "Orange"),
-    ("#f6d32d", "Yellow"),
-    ("#33d17a", "Green"),
-    ("#3584e4", "Blue"),
-    ("#9141ac", "Purple"),
-    ("#d16d9e", "Pink"),
-    ("#77767b", "Slate"),
+    ("", "无"),
+    ("#e01b24", "红"),
+    ("#ff7800", "橙"),
+    ("#f6d32d", "黄"),
+    ("#33d17a", "绿"),
+    ("#3584e4", "蓝"),
+    ("#9141ac", "紫"),
+    ("#d16d9e", "粉"),
+    ("#77767b", "灰蓝"),
 ];
 
 /// `#RRGGBB` to a brush colour. Anything else is refused rather than guessed at — the value is
@@ -176,7 +176,7 @@ pub(crate) fn hex_color(hex: &str) -> Option<Color> {
 /// The colour row: one tappable swatch per palette entry, the current one ringed.
 fn colour_swatches(profile: &StreamProfile, rev: u64, set_rev: &AsyncSetState<u64>) -> Element {
     let current = profile.accent.clone().unwrap_or_default();
-    let mut row: Vec<Element> = vec![text_block("Colour")
+    let mut row: Vec<Element> = vec![text_block("颜色")
         .font_size(12.0)
         .foreground(ThemeRef::SecondaryText)
         .vertical_alignment(VerticalAlignment::Center)
@@ -241,9 +241,9 @@ fn edit_profile_modal(
     set_rev: &AsyncSetState<u64>,
 ) -> Element {
     let mut rows: Vec<Element> = vec![text_block(if switcher.is_some() {
-        "Profiles"
+        "配置方案"
     } else {
-        "Edit profile"
+        "编辑配置方案"
     })
     .font_size(20.0)
     .bold()
@@ -266,8 +266,8 @@ fn edit_profile_modal(
         let name_box = {
             let id = id.clone();
             text_box(&profile.name)
-                .header("Name")
-                .placeholder_text("Profile name")
+                .header("名称")
+                .placeholder_text("配置方案名称")
                 .on_text_changed(move |t: String| {
                     let name = t.trim().to_string();
                     if name.is_empty() {
@@ -290,9 +290,8 @@ fn edit_profile_modal(
     }
     rows.push(
         text_block(
-            "A profile overrides only what you change while it is selected; everything \
-             else follows Default settings. Renaming applies as you type. Deleting leaves \
-             hosts that used it on Default settings.",
+            "配置方案只覆盖你在选中它时修改的项；其余都遵循默认设置。\
+             重命名即时生效。删除后，使用它的主机将回退到默认设置。",
         )
         .font_size(12.0)
         .wrap()
@@ -305,7 +304,7 @@ fn edit_profile_modal(
         buttons.push(
             {
                 let (id, set_scope) = (id.clone(), set_scope.clone());
-                button("Duplicate").icon(Symbol::Copy).on_click(move || {
+                button("创建副本").icon(Symbol::Copy).on_click(move || {
                     let mut catalog = ProfilesFile::load();
                     let Some(source) = catalog.find_by_id(&id).cloned() else {
                         return;
@@ -330,7 +329,7 @@ fn edit_profile_modal(
         buttons.push(
             {
                 let set_delete = set_delete.clone();
-                button("Delete\u{2026}")
+                button("删除\u{2026}")
                     .icon(Symbol::Delete)
                     .on_click(move || set_delete.call(Some(id.clone())))
             }
@@ -352,7 +351,7 @@ fn edit_profile_modal(
     buttons.push(
         {
             let close_sheet = close_sheet.clone();
-            button("Save")
+            button("保存")
                 .accent()
                 .icon(Symbol::Save)
                 .on_click(close_sheet)
@@ -596,8 +595,8 @@ fn setting_toggle(
     let (ctx, scope) = (ctx.clone(), scope.to_string());
     let (rev, set_rev) = (rev.0, rev.1.clone());
     ToggleSwitch::new(on)
-        .on_content("On")
-        .off_content("Off")
+        .on_content("开")
+        .off_content("关")
         .on_toggled(move |v: bool| {
             commit(&ctx, &scope, (rev, &set_rev), |s| apply(s, v));
         })
@@ -639,7 +638,7 @@ fn described_overridable(
     let scope = scope.to_string();
     let reset_pill = border(
         hstack((
-            text_block("Overridden")
+            text_block("已被覆盖")
                 .font_size(11.0)
                 .semibold()
                 .foreground(ThemeRef::SystemAttention)
@@ -648,7 +647,7 @@ fn described_overridable(
             border(vstack(Vec::<Element>::new()).width(1.0).height(12.0))
                 .background(ThemeRef::CardStroke)
                 .vertical_alignment(VerticalAlignment::Center),
-            text_block("Reset")
+            text_block("重置")
                 .font_size(11.0)
                 .semibold()
                 .foreground(ThemeRef::AccentText)
@@ -661,7 +660,7 @@ fn described_overridable(
     .border_thickness(uniform(1.0))
     .corner_radius(10.0)
     .padding(edges(10.0, 3.0, 10.0, 3.0))
-    .tooltip("Overridden by this profile \u{2014} Reset returns it to Default settings")
+    .tooltip("此项已被当前配置方案覆盖\u{2014}\u{2014}点击可重置为默认设置")
     .on_tapped(move || {
         let mut catalog = ProfilesFile::load();
         if let Some(p) = catalog.profiles.iter_mut().find(|p| p.id == scope) {
@@ -800,8 +799,8 @@ pub(crate) fn settings_page(
     // The D1 tri-state: Native, Match window (a virtual index 1, stored as the
     // `match_window` flag), then the explicit sizes.
     let (res_names, res_i) = {
-        let names: Vec<String> = std::iter::once("Native display".to_string())
-            .chain(std::iter::once("Match window".to_string()))
+        let names: Vec<String> = std::iter::once("原生显示器".to_string())
+            .chain(std::iter::once("匹配窗口".to_string()))
             .chain(
                 RESOLUTIONS
                     .iter()
@@ -829,7 +828,7 @@ pub(crate) fn settings_page(
             .iter()
             .map(|&r| {
                 if r == 0 {
-                    "Native".into()
+                    "原生".into()
                 } else {
                     format!("{r} Hz")
                 }
@@ -883,7 +882,7 @@ pub(crate) fn settings_page(
     // Stored as the adapter description; empty = automatic (the window's monitor's adapter).
     let gpus = crate::gpu::adapter_names();
     let gpu_combo = (gpus.len() > 1).then(|| {
-        let mut names = vec!["Automatic (the display's GPU)".to_string()];
+        let mut names = vec!["自动（显示器所用的 GPU）".to_string()];
         names.extend(gpus.iter().cloned());
         let current = gpus
             .iter()
@@ -956,7 +955,7 @@ pub(crate) fn settings_page(
     // reaches the spawned session binary, whose service applies the same key.
     let pads = ctx.gamepad.pads();
     let (fwd_names, fwd_i) = {
-        let mut names = vec!["Automatic (all controllers)".to_string()];
+        let mut names = vec!["自动（所有手柄）".to_string()];
         names.extend(pads.iter().map(|p| {
             let kind = p.kind_label();
             if kind.is_empty() {
@@ -1077,14 +1076,14 @@ pub(crate) fn settings_page(
     let dev_combo = |saved: &str,
                      devs: &[pf_client_core::audio::AudioDevice],
                      apply: fn(&mut Settings, String)| {
-        let mut names = vec!["System default".to_string()];
+        let mut names = vec!["系统默认".to_string()];
         let mut keys = vec![String::new()];
         for d in devs {
             names.push(d.description.clone());
             keys.push(d.name.clone());
         }
         if !saved.is_empty() && !keys.iter().any(|k| k == saved) {
-            names.push(format!("{saved} (not detected)"));
+            names.push(format!("{saved}（未检测到）"));
             keys.push(saved.to_string());
         }
         (keys.len() > 1).then(|| {
@@ -1110,7 +1109,7 @@ pub(crate) fn settings_page(
 
     let licenses_button = {
         let ss = set_screen.clone();
-        button("Third-party licenses").on_click(move || ss.call(Screen::Licenses))
+        button("第三方许可").on_click(move || ss.call(Screen::Licenses))
     };
     // The client log's home — the file every "check the client log" message means, which until
     // this row had no way in from the UI at all. The folder rather than the file so the rotated
@@ -1122,7 +1121,7 @@ pub(crate) fn settings_page(
     // shipped doing. The `is_dir` guard keeps that fallback unreachable — if the resolve ever
     // comes back wrong, the click does nothing rather than landing somewhere misleading.
     // Best-effort otherwise, like the log itself: a failed spawn stays silent.
-    let logs_button = button("Open log folder").on_click(|| {
+    let logs_button = button("打开日志文件夹").on_click(|| {
         if let Some(dir) = crate::logfile::real_dir().filter(|d| d.is_dir()) {
             let _ = std::process::Command::new("explorer.exe").arg(&dir).spawn();
         }
@@ -1132,7 +1131,7 @@ pub(crate) fn settings_page(
     // in at compile time.
     let about_identity = vstack((
         text_block("Punktfunk").font_size(20.0).semibold(),
-        text_block(concat!("Version ", env!("CARGO_PKG_VERSION")))
+        text_block(concat!("版本 ", env!("CARGO_PKG_VERSION")))
             .font_size(12.0)
             .foreground(ThemeRef::SecondaryText),
     ))
@@ -1145,67 +1144,66 @@ pub(crate) fn settings_page(
     let (title, groups): (&str, Vec<Element>) = match section {
         "display" => {
             let mut out = group(
-                Some("Resolution"),
+                Some("分辨率"),
                 vec![
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "resolution",
-                        "Resolution",
+                        "分辨率",
                         over.resolution,
                         res_combo,
-                        "The host drives a real virtual output at exactly this size \u{2014} true \
-                         pixels, no scaling. \u{201C}Native display\u{201D} follows the monitor this \
-                         window is on; \u{201C}Match window\u{201D} keeps the picture pixel-exact \
-                         (1:1) through every resize.",
+                        "主机会以此精确尺寸驱动一个真实的虚拟输出\u{2014}\u{2014}真实像素，\
+                         无缩放。\u{201C}原生显示器\u{201D}跟随此窗口所在的显示器；\
+                         \u{201C}匹配窗口\u{201D}让画面在每次调整大小时都保持\
+                         像素级精确（1:1）。",
                     ),
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "refresh_hz",
-                        "Refresh rate",
+                        "刷新率",
                         over.refresh_hz,
                         hz_combo,
-                        "\u{201C}Native\u{201D} resolves to this display\u{2019}s refresh rate at \
-                         connect.",
+                        "\u{201C}原生\u{201D}在连接时解析为此显示器的刷新率。",
                     ),
                 ],
                 None,
             );
             out.extend(group(
-                Some("Quality"),
+                Some("画质"),
                 vec![
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "render_scale",
-                        "Render scale",
+                        "渲染比例",
                         over.render_scale,
                         scale_combo,
-                        "Above native supersamples for sharpness; below renders lighter on the \
-                         host and the link. This device resamples the result to the window.",
+                        "高于原生比例可通过超采样提升锐度；低于则减轻主机与链路负担。\
+                         本设备会将结果重采样到窗口大小。",
                     ),
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "bitrate_kbps",
-                        "Bitrate (Mb/s, 0 = automatic)",
+                        "码率（Mb/s，0 = 自动）",
                         over.bitrate_kbps,
                         bitrate_box,
-                        "0 lets the host decide (its default, clamped to what it supports). A \
-                         host card\u{2019}s context menu has a network speed test.",
+                        "设为 0 由主机决定（其默认值，并受主机能力限制）。\
+                         主机卡片的右键菜单中有网络速度测试。",
                     ),
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "codec",
-                        "Video codec",
+                        "视频编码器",
                         over.codec,
                         codec_combo,
-                        "A preference \u{2014} the host falls back if it can\u{2019}t encode it. \
-                         PyroWave is the low-latency wavelet codec for a WIRED link: it trades \
-                         bitrate (hundreds of Mb/s) for near-zero decode time, so it wants \
-                         gigabit Ethernet.",
+                        "此为偏好设置\u{2014}\u{2014}主机无法编码时会自动回退。\
+                         PyroWave 是面向有线链路的低延迟小波编码器：它用\
+                         高码率（数百 Mb/s）换取近乎为零的解码时间，\
+                         因此需要千兆以太网。",
                     ),
                     described_overridable(
                         (rev, set_rev),
@@ -1214,8 +1212,8 @@ pub(crate) fn settings_page(
                         "HDR (10-bit, BT.2020 PQ)",
                         over.hdr_enabled,
                         hdr_toggle,
-                        "HDR10, when the host has HDR content and this display supports it. \
-                         HEVC only; otherwise the stream stays SDR.",
+                        "当主机有 HDR 内容且本显示器支持时启用 HDR10。\
+                         仅支持 HEVC；否则串流保持 SDR。",
                     ),
                     // First sentence shared with the GTK client (its chroma_row); the
                     // constraint sentence names the real gate (host: PyroWave || NVENC) —
@@ -1224,35 +1222,35 @@ pub(crate) fn settings_page(
                         (rev, set_rev),
                         scope,
                         "enable_444",
-                        "Full chroma (4:4:4)",
+                        "全色度（4:4:4）",
                         over.enable_444,
                         chroma_toggle,
-                        "Full-colour video: crisp small text and thin lines, at more \
-                         bandwidth. Requires an NVIDIA host (NVENC) or the PyroWave \
-                         codec \u{2014} other encoders stream 4:2:0.",
+                        "全彩色视频：小字与细线更清晰，但占用更多带宽。\
+                         需要 NVIDIA 主机（NVENC）或 PyroWave 编码器\
+                         \u{2014}\u{2014}其他编码器使用 4:2:0。",
                     ),
                 ],
                 None,
             ));
             // Decoder and GPU are facts about THIS device's hardware — never per profile.
             out.extend(group(
-                Some("Decoding"),
+                Some("解码"),
                 if profile_mode {
                     Vec::new()
                 } else {
                     let mut fields = vec![described_labeled(
-                        "Video decoder",
+                        "视频解码器",
                         decoder_combo,
-                        "Automatic picks the hardware path this GPU does best \u{2014} Direct3D \
-                         11 on Intel, Vulkan Video on NVIDIA and AMD \u{2014} and falls back to \
-                         the CPU. Change it only when debugging.",
+                        "自动会选择此 GPU 最擅长的硬件路径\u{2014}\u{2014}Intel 用\
+                         Direct3D 11，NVIDIA 和 AMD 用 Vulkan Video\u{2014}\u{2014}并\
+                         回退到 CPU。仅在调试时修改。",
                     )];
                     if let Some(c) = gpu_combo {
                         fields.push(described_labeled(
                             "GPU",
                             c,
-                            "Which adapter decodes and presents the stream. Automatic uses the \
-                             GPU driving this window\u{2019}s display.",
+                            "用哪块显卡解码并呈现串流。自动使用驱动此窗口\
+                             显示器的 GPU。",
                         ));
                     }
                     fields
@@ -1260,30 +1258,30 @@ pub(crate) fn settings_page(
                 None,
             ));
             out.extend(group(
-                Some("Presentation"),
+                Some("呈现"),
                 {
                     let mut fields = vec![described_overridable(
                         (rev, set_rev),
                         scope,
                         "present_priority",
-                        "Prioritize",
+                        "优先策略",
                         over.present_priority,
                         present_combo,
-                        "Lowest latency shows each frame the moment the display can take \
-                         it \u{2014} a network hiccup becomes an occasional repeated or \
-                         skipped frame. Smoothness buffers a little to even those out.",
+                        "最低延迟会在显示器可接受的瞬间立即显示每一帧\
+                         \u{2014}\u{2014}网络抖动会表现为偶尔重复或跳过的帧。\
+                         流畅度则会稍作缓冲来抹平这些抖动。",
                     )];
                     if smoothing {
                         fields.push(described_overridable(
                             (rev, set_rev),
                             scope,
                             "smooth_buffer",
-                            "Smoothness buffer",
+                            "流畅度缓冲",
                             over.smooth_buffer,
                             buffer_combo,
-                            "Frames held back before showing. Each one absorbs about a \
-                             refresh of network hiccup and adds a refresh of delay. \
-                             Automatic holds two.",
+                            "显示前保留的帧数。每一帧可吸收约一次刷新周期的\
+                             网络抖动，同时增加一次刷新周期的延迟。\
+                             自动保留两帧。",
                         ));
                     }
                     fields.push(described_overridable(
@@ -1293,101 +1291,99 @@ pub(crate) fn settings_page(
                         "V-Sync",
                         over.vsync,
                         vsync_toggle,
-                        "Tear-free. Turning it off removes the wait for the screen\u{2019}s \
-                         refresh \u{2014} the lowest possible delay, at the cost of visible \
-                         tearing. Not every driver offers it; the stats overlay names the \
-                         mode actually in use.",
+                        "防撕裂。关闭可消除等待屏幕刷新的时间\u{2014}\u{2014}延迟\
+                         最低，但会出现可见的画面撕裂。并非所有驱动都支持；\
+                         统计浮层会显示实际使用的模式。",
                     ));
                     fields.push(described_overridable(
                         (rev, set_rev),
                         scope,
                         "allow_vrr",
-                        "Follow variable refresh rate",
+                        "跟随可变刷新率",
                         over.allow_vrr,
                         vrr_toggle,
-                        "On a VRR/FreeSync/G-Sync screen, let the panel refresh in step with \
-                         the stream instead of on a fixed cadence. Applies to fullscreen \
-                         sessions; harmless on a fixed-refresh screen.",
+                        "在 VRR/FreeSync/G-Sync 屏幕上，让面板跟随串流节奏\
+                         刷新，而非固定频率。仅对全屏会话生效；在固定\
+                         刷新率屏幕上无副作用。",
                     ));
                     fields
                 },
                 None,
             ));
             out.extend(group(
-                Some("Host output"),
+                Some("主机输出"),
                 vec![described_overridable(
                     (rev, set_rev),
                     scope,
                     "compositor",
-                    "Host compositor",
+                    "主机合成器",
                     over.compositor,
                     comp_combo,
-                    "The backend the host uses for its virtual output (Linux hosts only). A \
-                     specific choice falls back to auto-detection when that backend \
-                     isn\u{2019}t available.",
+                    "主机用于虚拟输出的后端（仅限 Linux 主机）。指定的\
+                     后端不可用时回退到自动检测。",
                 )],
                 // The one form-level note, exactly as on Apple.
-                Some("Display changes apply from the next session."),
+                Some("显示设置的更改将在下次会话时生效。"),
             ));
-            ("Display", out)
+            ("显示", out)
         }
         "input" => {
             let mut out = group(
-                Some("Touch & pointer"),
+                Some("触摸与指针"),
                 vec![described_overridable(
                     (rev, set_rev),
                     scope,
                     "touch_mode",
-                    "Touch input",
+                    "触摸输入",
                     over.touch_mode,
                     touch_combo,
-                    "How a touchscreen drives the host: Trackpad moves the host cursor like a \
-                     laptop trackpad (tap to click), Direct pointer jumps the cursor to wherever \
-                     you touch, Touch passthrough sends real multi-touch through.",
+                    "触摸屏如何操控主机：触控板模式像笔记本触控板一样移动\
+                     主机光标（点按即点击），直接指针模式将光标跳转到\
+                     触摸位置，触摸透传模式发送真实多点触控。",
                 )],
                 None,
             );
             out.extend(group(
-                Some("Keyboard & mouse"),
+                Some("键盘与鼠标"),
                 vec![
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "mouse_mode",
-                        "Mouse input",
+                        "鼠标输入",
                         over.mouse_mode,
                         mouse_combo,
-                        "Capture locks the pointer to the stream and sends relative motion — \
-                         best for games. Desktop leaves the pointer free to enter and leave \
-                         the stream and sends absolute positions — best for remote desktop \
-                         work. Ctrl+Alt+Shift+M switches live.",
+                        "捕获模式将指针锁定在串流画面内并发送相对位移——\
+                         适合游戏。桌面模式让指针自由进出串流画面并\
+                         发送绝对坐标——适合远程桌面。\
+                         Ctrl+Alt+Shift+M 可实时切换。",
                     ),
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "inhibit_shortcuts",
-                        "Capture system shortcuts (Alt+Tab, Win, \u{2026})",
+                        "捕获系统快捷键（Alt+Tab、Win 等）",
                         over.inhibit_shortcuts,
                         shortcuts_toggle,
-                        "Alt+Tab, the Windows key and friends reach the host while the stream \
-                         has input captured. Off, they act on this machine instead.",
+                        "当串流捕获输入时，Alt+Tab、Windows 键等会发送到\
+                         主机。关闭时，它们作用于本机。",
                     ),
                     described_overridable(
                         (rev, set_rev),
                         scope,
                         "invert_scroll",
-                        "Invert scroll direction",
+                        "反转滚动方向",
                         over.invert_scroll,
                         invert_scroll_toggle,
-                        "Reverses the wheel and trackpad scroll direction sent to the host.",
+                        "反转发送到主机的滚轮和触控板滚动方向。",
                     ),
                 ],
                 None,
             ));
-            ("Input", out)
+            ("输入", out)
         }
         "controllers" => (
-            "Controllers",
+            "手柄",
             group(
                 None,
                 [
@@ -1396,7 +1392,7 @@ pub(crate) fn settings_page(
                     // device fact, so defaults scope only, like the forward picker below.
                     (!profile_mode).then(|| {
                         let inventory: Element = if pads.is_empty() {
-                            text_block("No controllers detected")
+                            text_block("未检测到手柄")
                                 .font_size(12.0)
                                 .foreground(ThemeRef::SecondaryText)
                                 .into()
@@ -1405,8 +1401,8 @@ pub(crate) fn settings_page(
                                 pads.iter()
                                     .map(|p| {
                                         let sub = if p.steam_virtual {
-                                            "Steam Input's virtual pad \u{2014} Automatic skips \
-                                             it while a real pad is connected"
+                                            "Steam Input 的虚拟手柄\u{2014}\u{2014}连接了真实\
+                                             手柄时自动模式会跳过它"
                                                 .to_string()
                                         } else {
                                             p.kind_label().to_string()
@@ -1426,9 +1422,9 @@ pub(crate) fn settings_page(
                             .into()
                         };
                         described_labeled(
-                            "Detected controllers",
+                            "已检测到的手柄",
                             inventory,
-                            "Plug in or pair a controller and it appears here.",
+                            "插入手柄或配对手柄后会显示在这里。",
                         )
                     }),
                     // Whether ANY controller is forwarded — profileable, so it renders in
@@ -1438,15 +1434,14 @@ pub(crate) fn settings_page(
                         (rev, set_rev),
                         scope,
                         "gamepad_forwarding",
-                        "Forward controllers",
+                        "转发手柄",
                         over.gamepad_forwarding,
                         pad_forward_toggle,
-                        "Sends controllers connected to this PC to the host. Turn it off when \
-                         your controller already reaches the host another way \u{2014} USB \
-                         passthrough such as VirtualHere, or a pad plugged into the host \
-                         itself \u{2014} so games don't see two of them. Off, this PC never \
-                         opens the controller at all, which is what leaves it free for a \
-                         passthrough tool to claim.",
+                        "将连接到本 PC 的手柄发送到主机。如果你的手柄已通过\
+                         其他方式到达主机\u{2014}\u{2014}例如 VirtualHere 等 USB\
+                         透传工具，或直接插在主机上\u{2014}\u{2014}请关闭此项，\
+                         避免游戏检测到两个手柄。关闭后，本 PC 完全不会\
+                         打开手柄，透传工具才能独占它。",
                     )),
                     // NOT Apple's wording: Apple forwards ONE pad as player 1, this client
                     // forwards every controller as its own player. Same picker, different rule.
@@ -1454,56 +1449,56 @@ pub(crate) fn settings_page(
                     // renders only in the defaults scope; the EMULATED type below is profileable.
                     (!profile_mode).then(|| {
                         described_labeled(
-                        "Forwarded controller",
+                        "转发的手柄",
                         forward_combo,
-                        "Every connected controller is forwarded, each as its own player. Pick \
-                         one to force single-player \u{2014} only it reaches the host.",
+                        "默认转发所有已连接的手柄，各为独立玩家。选定一个\
+                         则强制单人模式\u{2014}\u{2014}只有它会到达主机。",
                     )
                     }),
                     Some(described_overridable(
                         (rev, set_rev),
                         scope,
                         "gamepad",
-                        "Gamepad type",
+                        "手柄类型",
                         over.gamepad,
                         pad_combo,
-                        "The virtual pad created on the host. Automatic matches your controller \
-                         \u{2014} a DualSense keeps adaptive triggers, lightbar, touchpad and \
-                         motion.",
+                        "在主机上创建的虚拟手柄。自动模式匹配你的手柄\
+                         \u{2014}\u{2014}DualSense 会保留自适应扳机、灯条、\
+                         触控板和体感。",
                     )),
                     Some(described_overridable(
                         (rev, set_rev),
                         scope,
                         "system_buttons",
-                        "Steam / guide button",
+                        "Steam / 导航键",
                         over.system_buttons,
                         sysbtn_combo,
-                        "Where the guide (Xbox/PS) and quick-access presses go while \
-                         streaming. Automatic sends them to the host \u{2014} except on \
-                         devices whose own overlay reacts to the same press (Gaming Mode), \
-                         where they stay local and the gesture below reaches the host.",
+                        "串流时导航键（Xbox/PS）和快捷菜单按键的去向。\
+                         自动模式发送到主机\u{2014}\u{2014}除非设备自身的浮层\
+                         响应同一按键（游戏模式），此时按键留在本机，\
+                         由下方手势转发到主机。",
                     )),
                     Some(described_overridable(
                         (rev, set_rev),
                         scope,
                         "guide_gesture",
-                        "Hold Select for guide",
+                        "长按 Select 触发导航键",
                         over.guide_gesture,
                         gesture_combo,
-                        "Hold Select on its own to press the host's guide button \u{2014} keep \
-                         holding for a Gaming-Mode host's quick-access menu. A Select tap \
-                         still goes through, slightly delayed. Automatic arms it only where \
-                         the real button can't reach the host.",
+                        "单独长按 Select 可按下主机的导航键\u{2014}\u{2014}持续\
+                         按住则打开游戏模式主机的快捷菜单。点按 Select\
+                         仍会生效，只是稍有延迟。自动模式仅在真实\
+                         按键无法到达主机时启用此手势。",
                     )),
                 ]
                 .into_iter()
                 .flatten()
                 .collect(),
-                Some("Applies from the next session."),
+                Some("将在下次会话时生效。"),
             ),
         ),
         "audio" => (
-            "Audio",
+            "音频",
             group(
                 None,
                 [
@@ -1511,11 +1506,11 @@ pub(crate) fn settings_page(
                         (rev, set_rev),
                         scope,
                         "audio_channels",
-                        "Audio channels",
+                        "音频声道",
                         over.audio_channels,
                         channels_combo,
-                        "The speaker layout requested from the host. It downmixes if its own \
-                         output has fewer channels.",
+                        "向主机请求的扬声器布局。主机自身输出声道较少时\
+                         会自动混音降级。",
                     )),
                     // Stereo-only, so the row is HIDDEN under 5.1/7.1 rather than offered and
                     // declined: a lossless surround frame does not fit one QUIC datagram at the
@@ -1547,10 +1542,10 @@ pub(crate) fn settings_page(
                         .then(|| {
                             speaker_combo.map(|c| {
                                 described_labeled(
-                                    "Speaker",
+                                    "扬声器",
                                     c,
-                                    "Host audio plays here \u{2014} System default follows \
-                                     the Windows output device.",
+                                    "主机音频在此播放\u{2014}\u{2014}系统默认跟随\
+                                     Windows 输出设备。",
                                 )
                             })
                         })
@@ -1559,19 +1554,19 @@ pub(crate) fn settings_page(
                         (rev, set_rev),
                         scope,
                         "mic_enabled",
-                        "Stream microphone to the host",
+                        "将麦克风串流到主机",
                         over.mic_enabled,
                         mic_toggle,
-                        "This device\u{2019}s microphone feeds the host\u{2019}s virtual mic. \
-                         Ctrl+Alt+Shift+V mutes and unmutes it during a stream.",
+                        "本设备的麦克风将输入到主机的虚拟麦克风。\
+                         串流时按 Ctrl+Alt+Shift+V 可静音/取消静音。",
                     )),
                     (!profile_mode)
                         .then(|| {
                             mic_dev_combo.map(|c| {
                                 described_labeled(
-                                    "Microphone",
+                                    "麦克风",
                                     c,
-                                    "The input that feeds the host\u{2019}s virtual mic.",
+                                    "为主机虚拟麦克风提供音频的输入设备。",
                                 )
                             })
                         })
@@ -1580,31 +1575,31 @@ pub(crate) fn settings_page(
                         (rev, set_rev),
                         scope,
                         "echo_cancel",
-                        "Echo cancellation",
+                        "回声消除",
                         over.echo_cancel,
                         echo_toggle,
-                        "Keeps the host\u{2019}s audio, playing from this machine\u{2019}s \
-                         speakers, from being picked up and sent straight back. Turn it off if \
-                         your microphone already does its own processing.",
+                        "防止本机扬声器播放的主机音频被麦克风拾取并\
+                         回传。如果你的麦克风自带处理功能，\
+                         可关闭此项。",
                     )),
                 ]
                 .into_iter()
                 .flatten()
                 .collect(),
-                Some("Applies from the next session."),
+                Some("将在下次会话时生效。"),
             ),
         ),
         "about" => (
-            "About",
+            "关于",
             group(
                 None,
                 vec![
                     about_identity.into(),
                     described_labeled(
-                        "Diagnostics",
+                        "诊断",
                         logs_button,
-                        "The client log (client.log, plus the session\u{2019}s whole \
-                         receive/decode/present trail) \u{2014} attach it to a bug report.",
+                        "客户端日志（client.log，以及会话的完整接收/解码/\
+                         呈现记录）\u{2014}\u{2014}提交问题时请附上它。",
                     ),
                     licenses_button.into(),
                 ],
@@ -1614,48 +1609,47 @@ pub(crate) fn settings_page(
         // "general" and anything unrecognized.
         _ => {
             let mut out = group(
-                Some("Session"),
+                Some("会话"),
                 vec![described_overridable(
                     (rev, set_rev),
                     scope,
                     "fullscreen_on_stream",
-                    "Start streams fullscreen",
+                    "全屏开始串流",
                     over.fullscreen_on_stream,
                     fullscreen_toggle,
-                    "Go fullscreen when a session starts; F11 or Alt+Enter switches back \
-                         live.",
+                    "会话开始时进入全屏；F11 或 Alt+Enter 可随时切回。",
                 )]
                 .into_iter()
                 // Auto-wake is about this host and this network, not about "Game vs Work" —
                 // it stays global in v1 (design §3, tier H/G).
                 .chain((!profile_mode).then(|| {
                     described_labeled(
-                        "Auto-wake on connect",
+                        "连接时自动唤醒",
                         auto_wake_toggle,
-                        "Connecting to a saved host that\u{2019}s offline sends Wake-on-LAN and \
-                         waits for it to boot. Turn off if hosts behind a VPN look offline when \
-                         they aren\u{2019}t.",
+                        "连接到离线的已保存主机时，自动发送网络唤醒并\
+                         等待其启动。如果 VPN 后的主机误显示为离线，\
+                         可关闭此项。",
                     )
                 }))
                 .collect(),
                 None,
             );
             out.extend(group(
-                Some("Statistics"),
+                Some("统计"),
                 vec![described_overridable(
                     (rev, set_rev),
                     scope,
                     "stats_verbosity",
-                    "Stats overlay (HUD)",
+                    "统计浮层（HUD）",
                     over.stats_verbosity,
                     hud_combo,
-                    "Live session stats in a corner overlay \u{2014} Compact is a one-line pill, \
-                     Detailed adds the latency stage breakdown. Ctrl+Alt+Shift+S cycles the \
-                     tiers any time.",
+                    "在角落浮层中显示实时会话统计\u{2014}\u{2014}紧凑模式为\
+                     单行胶囊，详细模式增加延迟分阶段明细。随时按\
+                     Ctrl+Alt+Shift+S 循环切换。",
                 )],
                 None,
             ));
-            ("General", out)
+            ("常规", out)
         }
     };
 
@@ -1664,20 +1658,20 @@ pub(crate) fn settings_page(
     // mode collapses the pane on a narrow window, exactly like Windows Settings.
     // Category order mirrors the Apple client's sidebar exactly.
     let items = vec![
-        NavViewItem::new("General")
+        NavViewItem::new("常规")
             .tag("general")
             .icon(Symbol::Setting),
-        NavViewItem::new("Display")
+        NavViewItem::new("显示")
             .tag("display")
             .icon(Symbol::FullScreen),
-        NavViewItem::new("Input")
+        NavViewItem::new("输入")
             .tag("input")
             .icon(Symbol::Keyboard),
-        NavViewItem::new("Audio").tag("audio").icon(Symbol::Volume),
-        NavViewItem::new("Controllers")
+        NavViewItem::new("音频").tag("audio").icon(Symbol::Volume),
+        NavViewItem::new("手柄")
             .tag("controllers")
             .icon(Symbol::Play),
-        NavViewItem::new("About").tag("about").icon(Symbol::Help),
+        NavViewItem::new("关于").tag("about").icon(Symbol::Help),
     ];
     // The card is KEYED by section so switching panes REMOUNTS it instead of diffing one
     // section's controls into another's: an in-place diff re-sets a reused ComboBox's items
@@ -1707,10 +1701,10 @@ pub(crate) fn settings_page(
         .iter()
         .map(|p| (p.id.clone(), p.name.clone()))
         .collect();
-    const SCOPE_DEFAULT: &str = "Default settings";
-    const SCOPE_NEW: &str = "New profile\u{2026}";
+    const SCOPE_DEFAULT: &str = "默认设置";
+    const SCOPE_NEW: &str = "新建配置方案\u{2026}";
     // The Edit entry's prefix — the suffix is the profile's display name.
-    const SCOPE_EDIT: &str = "Edit \u{201c}";
+    const SCOPE_EDIT: &str = "编辑 \u{201c}";
     let scope_bar: Element = {
         let scope_label = match &active {
             Some(p) => p.name.clone(),
@@ -1738,9 +1732,9 @@ pub(crate) fn settings_page(
                         // there is no half-created state a Cancel would have to unwind.
                         let mut catalog = ProfilesFile::load();
                         let name = (1..)
-                            .map(|n| format!("Profile {n}"))
+                            .map(|n| format!("配置方案 {n}"))
                             .find(|n| !catalog.name_taken(n, None))
-                            .unwrap_or_else(|| "Profile".to_string());
+                            .unwrap_or_else(|| "配置方案".to_string());
                         let profile = StreamProfile::new(name);
                         let new_id = profile.id.clone();
                         catalog.profiles.push(profile);
@@ -1763,7 +1757,7 @@ pub(crate) fn settings_page(
                     }
                 })
         };
-        let mut row: Vec<Element> = vec![text_block("Editing")
+        let mut row: Vec<Element> = vec![text_block("正在编辑")
             .font_size(13.0)
             .foreground(ThemeRef::SecondaryText)
             .vertical_alignment(VerticalAlignment::Center)
@@ -1853,18 +1847,12 @@ pub(crate) fn settings_page(
                     .iter()
                     .filter(|h| h.pinned_profiles.iter().any(|x| x == &p.id))
                     .count();
-                let mut body = format!("\u{201c}{}\u{201d} will be removed.", p.name);
+                let mut body = format!("\u{201c}{}\u{201d}将被移除。", p.name);
                 if bound > 0 {
-                    body.push_str(&format!(
-                        " {bound} host{} will fall back to Default settings.",
-                        if bound == 1 { "" } else { "s" }
-                    ));
+                    body.push_str(&format!(" {bound} 台主机将回退到默认设置。"));
                 }
                 if pinned > 0 {
-                    body.push_str(&format!(
-                        " {pinned} pinned card{} will disappear.",
-                        if pinned == 1 { "" } else { "s" }
-                    ));
+                    body.push_str(&format!(" {pinned} 张固定卡片将消失。"));
                 }
                 body
             })
@@ -1875,10 +1863,10 @@ pub(crate) fn settings_page(
             set_delete.clone(),
             set_edit.clone(),
         );
-        ContentDialog::new("Delete profile?")
+        ContentDialog::new("删除配置方案？")
             .content(body)
-            .primary_button_text("Delete")
-            .close_button_text("Cancel")
+            .primary_button_text("删除")
+            .close_button_text("取消")
             .is_open(pending.is_some())
             .on_closed(move |r: ContentDialogResult| {
                 set_delete.call(None);
@@ -1903,7 +1891,7 @@ pub(crate) fn settings_page(
             .into()
     };
     let nav = NavigationView::new(items, content)
-        .pane_title("Settings")
+        .pane_title("设置")
         .selected_tag(section)
         .on_selection_changed({
             let ss = set_section.clone();
@@ -1950,10 +1938,10 @@ pub(crate) fn settings_page(
     // bookkeeping breaks.
     let store_slot: Element = match pf_client_core::trust::store_health::last_error() {
         Some(err) => border(
-            InfoBar::new("Your changes aren\u{2019}t being saved")
+            InfoBar::new("你的更改不会被保存")
                 .message(format!(
-                    "Punktfunk can\u{2019}t write to its settings folder, so nothing on this \
-                     page will survive a restart. {err}"
+                    "Punktfunk 无法写入其设置文件夹，此页面上的任何更改在重启后\
+                     都会丢失。{err}"
                 ))
                 .error()
                 .is_closable(false),

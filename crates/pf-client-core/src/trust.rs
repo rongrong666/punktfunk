@@ -833,39 +833,37 @@ pub fn pair_with_host(
 pub fn connect_reject_message(reason: punktfunk_core::reject::RejectReason) -> String {
     use punktfunk_core::reject::RejectReason as R;
     match reason {
-        R::Denied => "The host declined this device's request.".into(),
+        R::Denied => "主机拒绝了本设备的请求。".into(),
         R::ApprovalTimeout => {
-            "Nobody approved the request on the host in time — approve this device in the \
-             host's console or web UI, then request access again."
+            "主机上无人及时批准请求——请在主机的控制台或 Web 界面中批准本设备，\
+             然后重新请求访问。"
                 .into()
         }
         R::Superseded => {
-            "A newer request from this device replaced this one — approve the latest request \
-             on the host."
+            "本设备发送了更新的请求并取代了此请求——请在主机上批准最新的请求。"
                 .into()
         }
         R::IdentityRequired => {
-            "The host requires pairing — pair this device (PIN or request access) first.".into()
+            "主机要求配对——请先配对本设备（PIN 或请求访问）。".into()
         }
         R::PairingNotArmed => {
-            "Pairing isn't armed on the host — arm it on the host's Pairing page, then try \
-             again."
+            "主机未启用配对——请在主机的「配对」页面启用配对后重试。"
                 .into()
         }
         R::PairingBoundToOtherDevice => {
-            "The host's pairing window is armed for a different device — arm it for this one."
+            "主机的配对窗口是为另一台设备启用的——请为本设备重新启用。"
                 .into()
         }
         R::PairingRateLimited => {
-            "Too many pairing attempts — wait a couple of seconds and try again.".into()
+            "配对尝试过于频繁——请稍等几秒后重试。".into()
         }
         R::WireVersionMismatch => {
-            "Client and host versions don't match — update both to the same release.".into()
+            "客户端与主机版本不匹配——请将两端更新到同一版本。".into()
         }
-        R::Busy => "The host is busy with another session.".into(),
+        R::Busy => "主机正忙于另一个会话。".into(),
         R::SetupFailed => {
-            "The host accepted the connection but couldn't start the stream — the host's log \
-             (web console → Log) has the cause."
+            "主机已接受连接，但无法启动串流——原因见主机日志\
+             （Web 控制台 → 日志）。"
                 .into()
         }
         R::AccessExpired => {
@@ -885,15 +883,15 @@ pub fn connect_reject_message(reason: punktfunk_core::reject::RejectReason) -> S
 pub fn pair_error_message(err: &punktfunk_core::PunktfunkError) -> String {
     use punktfunk_core::PunktfunkError as E;
     match err {
-        E::Crypto => "Wrong PIN — check the PIN on the host's Pairing page and try again.".into(),
+        E::Crypto => "PIN 码错误——请核对主机「配对」页面上显示的 PIN 码后重试。".into(),
         E::Rejected(reason) => connect_reject_message(*reason),
-        E::Timeout => "The host didn't answer. Is it running and reachable?".into(),
+        E::Timeout => "主机未响应。请确认它正在运行且网络可达。".into(),
         E::Io(_) => {
-            "Couldn't reach the host — check that this device and the host are on the same \
-             network (no VPN on this device, no guest-Wi-Fi / AP isolation)."
+            "无法连接到主机——请检查本设备与主机是否在同一网络\
+             （本设备未连接 VPN，无访客 Wi-Fi / AP 隔离）。"
                 .into()
         }
-        other => format!("Pairing failed: {other:?}"),
+        other => format!("配对失败：{other:?}"),
     }
 }
 
@@ -952,10 +950,10 @@ impl StatsVerbosity {
 
     pub fn label(self) -> &'static str {
         match self {
-            StatsVerbosity::Off => "Off",
-            StatsVerbosity::Compact => "Compact",
-            StatsVerbosity::Normal => "Normal",
-            StatsVerbosity::Detailed => "Detailed",
+            StatsVerbosity::Off => "关",
+            StatsVerbosity::Compact => "紧凑",
+            StatsVerbosity::Normal => "标准",
+            StatsVerbosity::Detailed => "详细",
         }
     }
 }

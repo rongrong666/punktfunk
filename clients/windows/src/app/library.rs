@@ -207,13 +207,13 @@ fn file_uri(p: &Path) -> String {
 fn store_label(store: &str) -> &'static str {
     match store {
         "steam" => "Steam",
-        "custom" => "Custom",
+        "custom" => "自定义",
         "heroic" => "Heroic",
         "lutris" => "Lutris",
         "epic" => "Epic",
         "gog" => "GOG",
         "xbox" => "Xbox",
-        _ => "Game",
+        _ => "游戏",
     }
 }
 
@@ -396,14 +396,14 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
     let tile_w = (content_w - POSTER_GAP * (cols as f64 - 1.0)) / cols as f64;
     let poster_h = tile_w * POSTER_RATIO;
 
-    let back_btn = button("Back").icon(Symbol::Back).on_click({
+    let back_btn = button("返回").icon(Symbol::Back).on_click({
         let ss = ss.clone();
         move || ss.call(Screen::Hosts)
     });
     let title = if target.name.is_empty() {
-        "Game library".to_string()
+        "游戏库".to_string()
     } else {
-        format!("Game library \u{00B7} {}", target.name)
+        format!("游戏库 \u{00B7} {}", target.name)
     };
     let mut body: Vec<Element> = vec![page_header(&title, back_btn)];
 
@@ -412,7 +412,7 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
             card(
                 hstack((
                     ProgressRing::indeterminate().width(18.0).height(18.0),
-                    text_block("Loading the library\u{2026}").foreground(ThemeRef::SecondaryText),
+                    text_block("正在加载游戏库\u{2026}").foreground(ThemeRef::SecondaryText),
                 ))
                 .spacing(12.0),
             )
@@ -420,7 +420,7 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
         ),
         LibraryPhase::Failed(msg) => {
             body.push(
-                InfoBar::new("Couldn't load the library")
+                InfoBar::new("无法加载游戏库")
                     .message(msg.clone())
                     .error()
                     .is_closable(false)
@@ -428,7 +428,7 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
             );
             let (ctx2, set_library) = (ctx.clone(), props.svc.set_library.clone());
             body.push(
-                button("Retry")
+                button("重试")
                     .accent()
                     .icon(Symbol::Refresh)
                     .on_click(move || start_fetch(&ctx2, &set_library))
@@ -439,8 +439,8 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
         LibraryPhase::Empty => body.push(
             card(
                 text_block(
-                    "No games yet \u{2014} add titles to the host's library (its console or web \
-                     UI) and they appear here.",
+                    "还没有游戏\u{2014}\u{2014}在主机的游戏库中（其控制台或 Web 界面）\
+                     添加游戏后会显示在这里。",
                 )
                 .wrap()
                 .foreground(ThemeRef::SecondaryText),
@@ -475,7 +475,7 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
             let both = !launchers.is_empty() && !titles.is_empty();
             if !launchers.is_empty() {
                 if both {
-                    body.push(group_heading("Launchers"));
+                    body.push(group_heading("启动器"));
                 }
                 body.push(tile_grid(
                     launchers.iter().map(|g| tile(g)).collect(),
@@ -485,7 +485,7 @@ pub(crate) fn library_page(props: &LibraryProps, cx: &mut RenderCx) -> Element {
             }
             if !titles.is_empty() {
                 if both {
-                    body.push(group_heading("Games"));
+                    body.push(group_heading("游戏"));
                 }
                 body.push(tile_grid(
                     titles.iter().map(|g| tile(g)).collect(),

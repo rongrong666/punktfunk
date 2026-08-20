@@ -109,9 +109,9 @@ pub(crate) fn silent_exit_banner(code: i32) -> Option<String> {
         // scavenger hunt (Settings ▸ About's "Open log folder" reaches it too).
         let log = crate::logfile::path()
             .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "the client log".into());
+            .unwrap_or_else(|| "客户端日志".into());
         format!(
-            "The session didn't start (punktfunk-session exited with code {code}). Check {log}."
+            "会话未能启动（punktfunk-session 退出，代码 {code}）。请查看 {log}。"
         )
     })
 }
@@ -244,7 +244,7 @@ fn spawn_with(
         .creation_flags(CREATE_NO_WINDOW);
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("couldn't start punktfunk-session: {e}"))?;
+        .map_err(|e| format!("无法启动 punktfunk-session：{e}"))?;
     tracing::info!(host = %host_label, "session binary spawned");
 
     if let Some(stderr) = child.stderr.take() {
