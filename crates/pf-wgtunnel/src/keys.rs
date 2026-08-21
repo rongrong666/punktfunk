@@ -46,6 +46,23 @@ pub fn load_private_key(path: &Path) -> io::Result<X25519SecretKey> {
     parse_private_key(&text)
 }
 
+/// Load the keypair stored at `path` (a base64 private key), or generate and persist a
+/// fresh one. One stable keypair per machine — the WG identity this device presents to
+/// every host, so a host admin never has to re-add a changed public key.
+/// Returns (private, public) base64.
+pub fn load_or_create_keypair(path: &Path) -> io::Result<(String, String)> {
+    if let Ok(secret) = load_private_key(path) {
+        let public = secret.public_key();
+        return Ok((B64.encode(secret.as_bytes()), B64.encode(public.as_bytes())));
+    }
+    let (private_b64, public_b64) = generate_keypair();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, &private_b64)?;
+    Ok((private_b64, public_b64))
+}
+
 /// Load a peer list file: one base64 public key per line, `#` comments allowed.
 pub fn load_peers(path: &Path) -> io::Result<Vec<X25519PublicKey>> {
     let text = fs::read_to_string(path)?;

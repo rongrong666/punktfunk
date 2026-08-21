@@ -161,9 +161,19 @@ fn host_tile(
         .into()
 }
 
+/// This machine's stable WireGuard identity (load-or-created as `client-wg.key` in the
+/// client config dir): ONE keypair per device, presented to every WG host, so a host
+/// admin never has to re-add a changed public key. `None` only when the config dir is
+/// unusable.
+fn wg_machine_keypair() -> Option<(String, String)> {
+    let path = pf_client_core::trust::config_dir()
+        .ok()?
+        .join("client-wg.key");
+    pf_wgtunnel::keys::load_or_create_keypair(&path).ok()
+}
+
 /// The hover-tracking pair `host_tile` needs: the currently hovered tile id + its root setter.
-pub(crate) struct Hover {
-    pub(crate) current: Option<String>,
+pub(crate) struct Hover {    pub(crate) current: Option<String>,
     pub(crate) set: AsyncSetState<Option<String>>,
 }
 
@@ -1016,17 +1026,19 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             };
             let wg = if *wg_live.borrow() {
                 // Validate the server key NOW (a bad key must not close the modal on a
-                // dead record), and this machine's keypair — generated when the modal
-                // opened, so it is always here, but regenerate defensively.
+                // dead record), and use this machine's stable keypair (loaded from /
+                // minted into the config dir — one WG identity per device).
                 let server_pub = wg_pubkey_live.borrow().trim().to_string();
                 if let Err(e) = pf_wgtunnel::keys::parse_public_key(&server_pub) {
                     st.call(format!("WireGuard 服务器公钥无效：{e}"));
                     return;
                 }
-                let (client_priv, _) = wg_keypair_live
-                    .borrow()
-                    .clone()
-                    .unwrap_or_else(pf_wgtunnel::keys::generate_keypair);
+                let Some((client_priv, _)) =
+                    wg_keypair_live.borrow().clone().or_else(|| wg_machine_keypair())
+                else {
+                    st.call("无法生成本机 WireGuard 密钥（配置目录不可写）".to_string());
+                    return;
+                };
                 let peer = WgPeer {
                     server_pub,
                     client_priv,
@@ -1077,11 +1089,11 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             );
         }
     };
-    // This machine's WG keypair, generated when the modal opens (never per render): the public
-    // half is what the user hands to the host admin for the peers list. Reopening the modal
-    // keeps the same keypair, so an admin who already added it never sees it change.
+    // This machine's WG keypair, loaded (or minted once) when the modal opens: STABLE per
+    // device, so the public half the user hands to a host admin never changes between
+    // sessions, machines reboots, or dialog reopenings.
     if show_add && wg_keypair_live.borrow().is_none() {
-        wg_keypair_live.set(Some(pf_wgtunnel::keys::generate_keypair()));
+        wg_keypair_live.set(wg_machine_keypair());
     }
     let wg_client_pub = wg_keypair_live
         .borrow()
@@ -1125,11 +1137,27 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     move |s: String| live.set(s)
                 }),
             vstack((
-                text_block("本机公钥 —— 发给主机管理员，写入其 peers 列表（每行一个）")
-                    .font_size(12.0)
-                    .foreground(ThemeRef::SecondaryText)
-                    .wrap()
-                    .horizontal_alignment(HorizontalAlignment::Left),
+                hstack((
+                    text_block("本机公钥 —— 发给主机管理员，写入其 peers 列表（每行一个）")
+                        .font_size(12.0)
+                        .foreground(ThemeRef::SecondaryText)
+                        .wrap()
+                        .horizontal_alignment(HorizontalAlignment::Left),
+                    button("复制")
+                        .subtle()
+                        .icon(Symbol::Copy)
+                        .on_click({
+                            let (pubkey, st) = (wg_client_pub.clone(), set_status.clone());
+                            move || {
+                                if pubkey.is_empty() {
+                                    return;
+                                }
+                                pf_client_core::clipboard::set_text(&pubkey);
+                                st.call("本机公钥已复制到剪贴板".to_string());
+                            }
+                        }),
+                ))
+                .spacing(8.0),
                 text_block(if wg_client_pub.is_empty() {
                     "（打开此对话框时生成）"
                 } else {
@@ -1137,6 +1165,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 })
                 .font_size(11.0)
                 .font_family("Consolas")
+                .selectable()
                 .wrap()
                 .horizontal_alignment(HorizontalAlignment::Left),
             ))
