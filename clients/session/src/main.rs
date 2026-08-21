@@ -25,6 +25,12 @@
 mod console;
 mod ring_layer;
 
+/// Loopback ports the in-process WireGuard relay listens on in WG mode (the session then
+/// dials these instead of the real host). Fixed, not configurable: the shell and the
+/// session agree on them implicitly through the `--wg-*` flags.
+const WG_LOCAL_QUIC_PORT: u16 = 9777;
+const WG_LOCAL_DATA_PORT: u16 = 9778;
+
 /// The session control socket: a line-per-connection unix socket other same-user
 /// processes use to poke the RUNNING stream — today two verbs, `guide` and `qam`, which
 /// press the HOST's system buttons (the Decky panel's "Steam menu / Quick access on the
@@ -99,6 +105,7 @@ mod ctl_socket {
 
 #[cfg(any(target_os = "linux", windows))]
 mod session_main {
+    use crate::{WG_LOCAL_DATA_PORT, WG_LOCAL_QUIC_PORT};
     use pf_client_core::gamepad::GamepadService;
     use pf_client_core::session::SessionParams;
     use pf_client_core::trust;
@@ -269,7 +276,10 @@ mod session_main {
         clipboard_override: Option<bool>,
         addr: String,
         port: u16,
-        pin: [u8; 32],
+        pin: Option<[u8; 32]>,
+        // WG mode dials the loopback relay but must still look host records up by the REAL
+        // address (clipboard opt-in below). `None` = addr/port are the real target.
+        lookup: Option<(String, u16)>,
         identity: (String, String),
         launch: Option<String>,
         gamepad: &GamepadService,
@@ -284,8 +294,9 @@ mod session_main {
         let clipboard = clipboard_override.unwrap_or_else(|| {
             // The record this address RESOLVES to, not "any record mentioning it": a retired
             // duplicate must never be the one that hands a host the clipboard.
+            let (laddr, lport) = lookup.unwrap_or_else(|| (addr.clone(), port));
             trust::KnownHosts::load()
-                .find_by_addr(&addr, port)
+                .find_by_addr(&laddr, lport)
                 .is_some_and(|h| h.clipboard_sync)
         });
         // Re-apply the shell-persisted forwarded-controller pin (stable `vid:pid:name`
@@ -449,7 +460,7 @@ mod session_main {
             decoder: settings.decoder.clone(),
             launch,
             vulkan,
-            pin: Some(pin),
+            pin,
             identity,
             connect_timeout: connect_timeout(),
             force_software,
@@ -975,6 +986,80 @@ mod session_main {
         };
         let (addr, port) = parse_host_port(&target);
 
+        // WireGuard overlay: `--wg-server addr:port --wg-server-pub B64 --wg-client-key B64`
+        // starts an in-process WG relay (the remote gate's mirror) and the session then
+        // dials its loopback listeners. All three flags come together or not at all.
+        let wg_args = (
+            arg_value("--wg-server"),
+            arg_value("--wg-server-pub"),
+            arg_value("--wg-client-key"),
+        );
+        let wg = match wg_args {
+            (None, None, None) => None,
+            (Some(server), Some(server_pub), Some(client_key)) => {
+                let (saddr, sport) = parse_host_port(&server);
+                let server_addr = match format!("{saddr}:{sport}").parse::<std::net::SocketAddr>()
+                {
+                    Ok(a) => a,
+                    Err(_) => match std::net::ToSocketAddrs::to_socket_addrs(&(saddr.as_str(), sport))
+                    {
+                        Ok(mut it) => match it.next() {
+                            Some(a) => a,
+                            None => {
+                                json_line("error", &format!("wg: cannot resolve {server}"), None);
+                                return EXIT_CONNECT_FAILED;
+                            }
+                        },
+                        Err(e) => {
+                            json_line("error", &format!("wg: resolve {server}: {e}"), None);
+                            return EXIT_CONNECT_FAILED;
+                        }
+                    },
+                };
+                let cfg = pf_wgtunnel::client::ClientConfig {
+                    server: server_addr,
+                    private_key: match pf_wgtunnel::keys::parse_private_key(&client_key) {
+                        Ok(k) => k,
+                        Err(e) => {
+                            json_line("error", &format!("wg client key: {e}"), None);
+                            return EXIT_CONNECT_FAILED;
+                        }
+                    },
+                    server_public: match pf_wgtunnel::keys::parse_public_key(&server_pub) {
+                        Ok(k) => k,
+                        Err(e) => {
+                            json_line("error", &format!("wg server public key: {e}"), None);
+                            return EXIT_CONNECT_FAILED;
+                        }
+                    },
+                    listen_quic: ([127, 0, 0, 1], WG_LOCAL_QUIC_PORT).into(),
+                    listen_data: ([127, 0, 0, 1], WG_LOCAL_DATA_PORT).into(),
+                };
+                std::thread::Builder::new()
+                    .name("wg-relay".into())
+                    .spawn(move || {
+                        if let Err(e) = pf_wgtunnel::client::run_client(cfg) {
+                            tracing::error!("wg relay: {e:#}");
+                        }
+                    })
+                    .ok();
+                Some(())
+            }
+            _ => {
+                json_line(
+                    "error",
+                    "--wg-server, --wg-server-pub and --wg-client-key must be given together",
+                    None,
+                );
+                return EXIT_CONNECT_FAILED;
+            }
+        };
+        let (dial_addr, dial_port) = if wg.is_some() {
+            ("127.0.0.1".to_string(), WG_LOCAL_QUIC_PORT)
+        } else {
+            (addr.clone(), port)
+        };
+
         let identity = match trust::load_or_create_identity() {
             Ok(i) => i,
             Err(e) => {
@@ -1018,7 +1103,9 @@ mod session_main {
             .as_deref()
             .and_then(trust::parse_hex32)
             .or_else(|| known_host.and_then(|h| trust::parse_hex32(&h.fp_hex)));
-        let Some(pin) = pin else {
+        // WG mode needs no pin: the tunnel handshake itself authenticates both peers, and the
+        // host's TLS fingerprint is learned from the session's own Welcome (see on_connected).
+        if pin.is_none() && wg.is_none() {
             json_line(
                 "error",
                 &format!(
@@ -1028,7 +1115,7 @@ mod session_main {
                 Some(true),
             );
             return EXIT_TRUST_REJECTED;
-        };
+        }
 
         let host_label = known_host.map_or_else(|| addr.clone(), |h| h.name.clone());
         let launch = arg_value("--launch");
@@ -1040,6 +1127,8 @@ mod session_main {
             || std::env::var_os("SteamDeck").is_some()
             || std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
 
+        let wg_mode = wg.is_some();
+        let fp_learn_addr = addr.clone();
         let opts = pf_presenter::SessionOpts {
             window_title: format!("Punktfunk · {title}"),
             fullscreen,
@@ -1053,8 +1142,15 @@ mod session_main {
             vsync: settings.vsync,
             allow_vrr: settings.allow_vrr,
             json_status: true,
-            on_connected: Some(Box::new(|fingerprint: [u8; 32], mgmt_port: u16| {
+            on_connected: Some(Box::new(move |fingerprint: [u8; 32], mgmt_port: u16| {
                 let fp = trust::hex(&fingerprint);
+                // WG mode connected with no pin: learn the host's TLS fingerprint NOW, keyed
+                // by its real address, so the shell can fill the card in (learn only when the
+                // record's fp is still empty; it must run before touch_last_used, which
+                // matches by fp).
+                if wg_mode {
+                    trust::learn_fp_by_addr(&fp_learn_addr, port, &fp);
+                }
                 // This host's card carries the accent bar in the desktop client now.
                 trust::touch_last_used(&fp);
                 // Save where this host serves its library, learned from the session's own
@@ -1083,9 +1179,10 @@ mod session_main {
                     &settings,
                     profile_name,
                     clipboard_override,
-                    addr,
-                    port,
+                    dial_addr,
+                    dial_port,
                     pin,
+                    wg_mode.then_some((addr, port)),
                     identity,
                     launch,
                     gamepad,

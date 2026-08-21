@@ -4,9 +4,8 @@
 //! `use_async_state` so background threads (discovery, the spawned session's stdout reader) can
 //! drive navigation. Each screen lives in its own submodule:
 //!
-//! * [`hosts`] — saved/discovered/manual host list, plus per-host forget + speed test
+//! * [`hosts`] — saved/manual host list, plus per-host forget + speed test
 //! * [`connect`] — the trust gate and session lifecycle glue (connect / request-access flows)
-//! * [`pair`] — the SPAKE2 PIN pairing ceremony
 //! * [`speed`] — the per-host network speed test (probe burst over the real data plane)
 //! * [`settings`] — persisted preferences · [`licenses`] — the license notices screen ·
 //!   [`help`] — the in-stream keyboard-shortcuts reference (reached from the host list)
@@ -45,16 +44,13 @@ mod connect;
 mod help;
 mod hosts;
 mod launcher_icons;
-mod library;
 mod licenses;
 mod os_icons;
-mod pair;
 mod settings;
 mod speed;
 mod stream;
 mod style;
 
-use crate::discovery::{self, DiscoveredHost};
 use crate::trust::{KnownHosts, Settings};
 use hosts::HostsProps;
 use pf_client_core::gamepad::GamepadService;
@@ -74,7 +70,7 @@ pub(crate) enum Screen {
     /// until the operator approves this device in its console. Cancelable.
     RequestAccess,
     /// Wake-on-LAN "wait until up": a magic packet was sent to an offline saved host and we're
-    /// polling mDNS for it to reappear (re-sending periodically) before dialing. Cancelable.
+    /// probing for it to come back (re-sending periodically) before dialing. Cancelable.
     Waking,
     Stream,
     Settings,
@@ -83,12 +79,8 @@ pub(crate) enum Screen {
     /// In-stream keyboard-shortcuts reference + capture help (reached from the host list's
     /// Shortcuts button).
     Help,
-    Pair,
     /// Per-host network speed test (probe burst + recommended bitrate).
     SpeedTest,
-    /// The target host's game library (poster grid; tap-to-launch) — paired hosts only,
-    /// since the fetch authenticates with the pairing identity.
-    Library,
 }
 
 /// The host we're about to connect to / pair with / speed-test (carried into those screens
@@ -103,10 +95,10 @@ pub(crate) struct Target {
     /// Wake-on-LAN MAC(s) for this host (from the saved store or the live advert) — used to send a
     /// magic packet before connecting to an offline host. Empty when none is known.
     pub(crate) mac: Vec<String>,
-    /// This host's management-API port (saved store or live advert), where the library screen
-    /// fetches from. `None` = unknown, use [`pf_client_core::library::DEFAULT_MGMT_PORT`]. Carried
-    /// on the target for the same reason as `mac`: the library screen has no `KnownHost` in hand,
-    /// and assuming 47990 there is what made a moved mgmt port work on the LAN but not over a VPN.
+    /// This host's management-API port (saved store). `None` = unknown, use
+    /// [`pf_client_core::library::DEFAULT_MGMT_PORT`]. Carried on the target for the same
+    /// reason as `mac`; unused by this no-library build but kept in the shared shape.
+    #[allow(dead_code)]
     pub(crate) mgmt_port: Option<u16>,
     /// A ONE-OFF settings profile for this connect ("Connect with"): `Some(id)` overrides the
     /// host's binding for this launch, `Some("")` forces the global defaults on a bound host,
@@ -114,9 +106,12 @@ pub(crate) struct Target {
     /// the picker in the host editor (design/client-settings-profiles.md §5.2).
     pub(crate) profile: Option<String>,
     /// A library title id (`steam:570`, …) to launch on connect — carried on the target so it
-    /// survives a detour through the PIN ceremony (a deep link's `launch=` toward an unpaired
-    /// host must still launch the game once pairing succeeds).
+    /// survives a detour through the trust flow.
     pub(crate) launch: Option<String>,
+    /// WireGuard-mode target: the session dials through the in-process WG relay using the
+    /// keys stored on this host's known-hosts record; no fingerprint pin is required up
+    /// front (learned from the session's Welcome on first connect).
+    pub(crate) wg: bool,
 }
 
 /// Stable app services handed to the page components as props. Each routed screen that uses
@@ -136,9 +131,6 @@ pub(crate) struct Svc {
     /// Speed-test lifecycle lives in root state (thread-driven — see the module docs); the hosts
     /// page resets it to `Running` before navigating, the probe worker completes it.
     pub(crate) set_speed: AsyncSetState<SpeedState>,
-    /// Library fetch/art state — root for the same reason; the hosts page kicks a fetch
-    /// off before navigating, the worker (and the art stream) completes it.
-    pub(crate) set_library: AsyncSetState<library::LibraryState>,
 }
 
 impl PartialEq for Svc {
@@ -149,14 +141,10 @@ impl PartialEq for Svc {
 
 /// Cross-thread shell state driven off the UI thread: the current target, the live spawned
 /// session child (Disconnect/Cancel kill it) and its latest stats line, plus the connect-flow
-/// cancel flag and the discovery/library/speed-test generation guards.
+/// cancel flag and the speed-test generation guard.
 #[derive(Default)]
 pub(crate) struct Shared {
     pub(crate) target: Mutex<Target>,
-    /// Forces the app's single LAN browse to re-query — the hosts page's Refresh. Installed by
-    /// the discovery effect below; `None` until then (and if the browse never started, in which
-    /// case Refresh is simply inert rather than a second, competing browse).
-    pub(crate) rescan: Mutex<Option<discovery::Rescan>>,
     /// The live session child (spawn mode) — the status page's Disconnect and the
     /// request-access Cancel kill it. A FRESH handle is installed per spawn.
     pub(crate) session: Mutex<crate::spawn::SessionChild>,
@@ -175,9 +163,6 @@ pub(crate) struct Shared {
     /// Whether the live session child is a `--browse` console-UI run (vs a stream) — the
     /// session status page words itself accordingly. Set by each spawn.
     pub(crate) browse: std::sync::atomic::AtomicBool,
-    /// Library-fetch generation (the speed test's guard pattern): bumped per fetch so a
-    /// superseded worker (re-open, Retry, another host) stops publishing.
-    pub(crate) library_gen: std::sync::atomic::AtomicU64,
 }
 
 pub struct AppCtx {
@@ -285,7 +270,6 @@ fn apply_window_icon_when_ready() {
 
 fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
     let (screen, set_screen) = cx.use_async_state(Screen::Hosts);
-    let (hosts, set_hosts) = cx.use_async_state(Vec::<DiscoveredHost>::new());
     let (status, set_status) = cx.use_async_state(String::new());
     let (hud, set_hud) = cx.use_async_state(stream::HudSample::default());
     let (speed, set_speed) = cx.use_async_state(SpeedState::Running);
@@ -340,29 +324,10 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
                 .ok();
         }
     });
-    // Connected-controller count, mirrored from the gamepad service by a poll thread
-    // (thread-driven state must be root state — see the module docs). Drives the hosts
-    // page's "Open console UI" hint; the compare in `call` makes the steady state free.
-    let (pads, set_pads) = cx.use_async_state(0usize);
-    cx.use_effect((), {
-        let (gp, set_pads) = (ctx.gamepad.clone(), set_pads.clone());
-        move || {
-            std::thread::Builder::new()
-                .name("pf-pads".into())
-                .spawn(move || loop {
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                    set_pads.call(gp.pads().len());
-                })
-                .ok();
-        }
-    });
     // Saved-host reachability, keyed by `fp_hex`, refreshed by the probe sweep below. Root state
     // (thread-driven → must be root to re-render — see the module docs), passed to the hosts page.
     let (probed, set_probed) = cx.use_async_state(HashMap::<String, bool>::new());
-    // Library fetch/art state (thread-driven → root; see `library::start_fetch`).
-    let (library, set_library) = cx.use_async_state(library::LibraryState::default());
 
-    // Continuous LAN discovery (spawned once).
     // Route an arriving link. Parsing, host and profile resolution and every refusal rule live
     // in the shared brain (`plan_from_link`); this is only the WinUI end — turn the outcome into
     // the same call a tile click makes, so a link gets the identical wake, trust and error
@@ -414,6 +379,7 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
                         mgmt_port: p.host.mgmt_port,
                         profile: p.profile_override.clone(),
                         launch: None, // routed explicitly below (initiate_launch*)
+                        wg: p.host.wg.is_some(),
                     };
                     // With a MAC it takes the dial first wake path, so a sleeping host wakes
                     // instead of erroring — exactly what clicking its tile would do. The
@@ -438,31 +404,13 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
                         (None, false) => connect::initiate(&ctx, target, &set_screen, &set_status),
                     }
                 }
-                // Known but never pinned, or not known at all: a link may not pair and may not
-                // trust on its own, so it opens the ordinary PIN ceremony seeded with what the
-                // link CLAIMED — name shown as claimed, the fingerprint pre-filling the pin so
-                // the first connect is verified against it rather than blind TOFU, and the
-                // launch/profile surviving the detour (§3.1; GTK-shell parity — this used to
-                // refuse outright and make shared links a dead end on Windows).
+                // Known but never pinned, or not known at all: this build has no PIN ceremony,
+                // so an untrusted link target is a dead end — point the user at WG mode.
                 Ok(PlanOutcome::ConfirmUnknown(u)) => {
                     let name = u.name.clone().unwrap_or_else(|| u.addr.clone());
-                    *ctx.shared.target.lock().unwrap() = Target {
-                        name: name.clone(),
-                        addr: u.addr.clone(),
-                        port: u.port,
-                        fp_hex: u.fp.clone(),
-                        pair_optional: false,
-                        mac: Vec::new(),
-                        // A link carries no mgmt port (nor a MAC), so this stays unknown until
-                        // an advert teaches it — same fallback as the hand-added case.
-                        mgmt_port: None,
-                        profile: u.profile.clone(),
-                        launch: u.launch.clone(),
-                    };
-                    set_status.call(format!(
-                        "{name} 尚未与本设备配对 \u{2014} 请先完成配对再继续。"
+                    refuse(format!(
+                        "{name} 尚未与本设备配对 —— 此版本已移除 PIN 配对流程，请用 WireGuard 模式手动添加。"
                     ));
-                    set_screen.call(Screen::Pair);
                 }
                 Ok(PlanOutcome::Unsupported(route)) => refuse(format!(
                     "Punktfunk 暂时无法打开 \u{201c}{}\u{201d} 链接。",
@@ -470,26 +418,6 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
                 )),
                 Err(e) => refuse(e.message()),
             }
-        }
-    });
-
-    cx.use_effect((), {
-        let set_hosts = set_hosts.clone();
-        let ctx = ctx.clone();
-        move || {
-            let (rx, rescan) = discovery::browse();
-            *ctx.shared.rescan.lock().unwrap() = Some(rescan);
-            std::thread::spawn(move || {
-                let mut acc: Vec<DiscoveredHost> = Vec::new();
-                while let Ok(h) = rx.recv_blocking() {
-                    if let Some(e) = acc.iter_mut().find(|e| e.key == h.key) {
-                        *e = h;
-                    } else {
-                        acc.push(h);
-                    }
-                    set_hosts.call(acc.clone());
-                }
-            });
         }
     });
 
@@ -669,17 +597,14 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
         set_screen: set_screen.clone(),
         set_status: set_status.clone(),
         set_speed: set_speed.clone(),
-        set_library: set_library.clone(),
     };
     let body = match &screen {
         Screen::Hosts => component(
             hosts::hosts_page,
             HostsProps {
                 svc,
-                hosts,
                 probed,
                 status,
-                pads,
                 forget,
                 rename,
                 show_add,
@@ -715,15 +640,7 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
         ),
         Screen::Licenses => licenses::licenses_page(ctx, &set_screen),
         Screen::Help => help::help_page(&set_screen),
-        Screen::Pair => component(pair::pair_page, svc),
         Screen::SpeedTest => component(speed::speed_page, SpeedProps { svc, state: speed }),
-        Screen::Library => component(
-            library::library_page,
-            library::LibraryProps {
-                svc,
-                state: library,
-            },
-        ),
         // The stream runs in the punktfunk-session child's own window; this screen is a
         // status page (no hooks — inline is sound).
         Screen::Stream => stream::session_page(ctx, &hud),

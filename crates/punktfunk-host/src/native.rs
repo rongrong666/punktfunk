@@ -147,7 +147,30 @@ pub struct Punktfunk1Options {
     /// `PUNKTFUNK_MDNS=0` turns it off for multicast-dead environments (bridged Docker, CI netns)
     /// — clients then connect via `--connect HOST:PORT` / a manually-added host, which always works.
     pub mdns: bool,
+    /// WireGuard gate mode (`--wg-key`/`--wg-peers`): the ONLY public socket is a WireGuard UDP
+    /// port; the QUIC endpoint and the data plane bind loopback and ride inside the tunnel via
+    /// `pf-wgtunnel`. Pairing and mDNS are forced off by the CLI in this mode (the tunnel itself
+    /// authenticates peers).
+    pub wg: Option<WgGate>,
 }
+
+/// WireGuard gate configuration for [`Punktfunk1Options::wg`].
+pub struct WgGate {
+    /// File with the host's base64 x25519 private key.
+    pub key_path: std::path::PathBuf,
+    /// File with allowed client public keys, one base64 key per line.
+    pub peers_path: std::path::PathBuf,
+    /// Public listen address for the gate. `None` = `0.0.0.0:<port>` (the QUIC port — one public
+    /// port total). Override when a router/NAT maps a different external port, or to run gate +
+    /// client relay on one loopback machine for testing.
+    pub listen: Option<std::net::SocketAddr>,
+}
+
+/// The data plane's fixed INNER port in WireGuard gate mode: the gate relays tunnel traffic to
+/// the data socket on loopback at this port, and the client relay exposes the same port number on
+/// the client machine's loopback. Fixed because the client-side relay cannot pre-bind an arbitrary
+/// per-session port.
+pub const WG_DATA_PORT: u16 = 9778;
 
 /// Bind the per-session data-plane UDP socket, honoring [`Punktfunk1Options::data_port`]. Returns
 /// `(socket, direct)`: `direct = true` (a successfully-bound fixed port) means "stream straight to
@@ -236,6 +259,38 @@ pub fn run(opts: Punktfunk1Options) -> Result<()> {
     // Standalone runs resolve the native identity themselves (the unified `serve` resolves it
     // once for both planes — see `crate::identity::load_or_adopt`'s once-per-process note).
     let ident = crate::identity::load_or_adopt(&np).context("native host identity")?;
+    // WireGuard gate mode: spawn the gate BEFORE serving — it owns the only public UDP socket
+    // and relays authenticated tunnel traffic to the loopback QUIC endpoint + data plane.
+    if let Some(wg) = &opts.wg {
+        let private_key = pf_wgtunnel::keys::load_private_key(&wg.key_path)
+            .with_context(|| format!("WireGuard host key {}", wg.key_path.display()))?;
+        let peers = pf_wgtunnel::keys::load_peers(&wg.peers_path)
+            .with_context(|| format!("WireGuard peers {}", wg.peers_path.display()))?;
+        let peer_count = peers.len();
+        let gate = pf_wgtunnel::server::ServerConfig {
+            listen: wg
+                .listen
+                .unwrap_or(std::net::SocketAddr::from(([0, 0, 0, 0], opts.port))),
+            private_key,
+            peers,
+            quic_target: std::net::SocketAddr::from(([127, 0, 0, 1], opts.port)),
+            data_target: std::net::SocketAddr::from(([127, 0, 0, 1], WG_DATA_PORT)),
+        };
+        std::thread::Builder::new()
+            .name("wg-gate".into())
+            .spawn(move || {
+                if let Err(e) = pf_wgtunnel::server::run_server(gate) {
+                    tracing::error!(error = %e, "WireGuard gate died");
+                }
+            })
+            .context("spawn WireGuard gate thread")?;
+        tracing::info!(
+            port = opts.port,
+            data_port = WG_DATA_PORT,
+            peers = peer_count,
+            "WireGuard gate mode: one public UDP port; QUIC + data plane are loopback-only"
+        );
+    }
     // Standalone `punktfunk1-host` runs no management API, so advertise no `mgmt` port (0).
     rt.block_on(serve(opts, 0, np, stats, ident))
 }
@@ -322,6 +377,7 @@ pub(crate) fn native_serve_opts(cfg: &NativeServe) -> Punktfunk1Options {
         data_port: cfg.data_port,
         idle_timeout: idle_timeout_from_env(),
         mdns: cfg.mdns,
+        wg: None,
     }
 }
 
@@ -336,8 +392,15 @@ pub(crate) async fn serve(
 ) -> Result<()> {
     let fingerprint = endpoint::fingerprint_of_pem(&identity.cert_pem)
         .map_err(|e| anyhow!("cert fingerprint: {e}"))?;
+    // WireGuard gate mode binds the QUIC endpoint on loopback only: the gate owns the public
+    // socket and relays authenticated tunnel traffic to us. Otherwise listen on all interfaces.
+    let bind_ip: [u8; 4] = if opts.wg.is_some() {
+        [127, 0, 0, 1]
+    } else {
+        [0, 0, 0, 0]
+    };
     let ep = endpoint::server_with_identity_idle(
-        ([0, 0, 0, 0], opts.port).into(),
+        (bind_ip, opts.port).into(),
         &identity.cert_pem,
         &identity.key_pem,
         opts.idle_timeout.unwrap_or(endpoint::DEFAULT_IDLE_TIMEOUT),
@@ -1277,6 +1340,10 @@ async fn serve_session(
     let source = opts.source;
     let frames = opts.frames;
     let data_port = opts.data_port;
+    // WireGuard gate mode: the data plane binds a fixed LOOPBACK port and keeps hole-punch
+    // semantics (host streams back to the gate's observed flow socket, not to a client-reported
+    // address that only exists on the far side of the tunnel).
+    let wg_mode = opts.wg.is_some();
     // Session-transition trace (latency plan P0.1): zeroed here — the Hello is in hand, pairing
     // gates are behind us — and finished by the send thread when the FIRST video packet leaves.
     // The completed totals surface per session in `session_status` (→ mgmt `/status`).
@@ -1320,6 +1387,7 @@ async fn serve_session(
                 source,
                 frames,
                 data_port,
+                wg_mode,
                 &bringup,
                 quit.clone(),
                 stop.clone(),
@@ -2641,6 +2709,7 @@ mod tests {
                 data_port: None,
                 idle_timeout: None,
                 mdns: false, // unit tests must not advertise on the LAN
+                wg: None,
             })
         });
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -2845,6 +2914,7 @@ mod tests {
                 data_port: None,
                 idle_timeout: None,
                 mdns: false,
+                wg: None,
             })
         });
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -2977,6 +3047,7 @@ mod tests {
                     data_port: None,
                     idle_timeout: None,
                     mdns: false,
+                    wg: None,
                 },
                 0, // no mgmt API in this test → advertise no `mgmt` mDNS port
                 np_host,
@@ -3084,6 +3155,7 @@ mod tests {
                 data_port: None,
                 idle_timeout: None,
                 mdns: false,
+                wg: None,
             })
         });
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -3287,6 +3359,7 @@ mod tests {
                     data_port: None,
                     idle_timeout: None,
                     mdns: false,
+                    wg: None,
                 },
                 0,
                 np,

@@ -34,6 +34,9 @@ ui = ["dep:pf-console-ui", "dep:serde_json"]
 pf-presenter = { path = "../../crates/pf-presenter", default-features = false }
 pf-console-ui = { path = "../../crates/pf-console-ui", optional = true }
 pf-client-core = { path = "../../crates/pf-client-core", default-features = false }
+# The in-process WireGuard relay (`--wg-server/--wg-server-pub/--wg-client-key`): dial a
+# punktfunk1-host in WG mode through the tunnel, loopback QUIC/data listeners on 9777/9778.
+pf-wgtunnel = { path = "../../crates/pf-wgtunnel" }
 punktfunk-core = { path = "../../crates/punktfunk-core", features = ["quic"] }
 # The fake-library dev hook (`PUNKTFUNK_FAKE_LIBRARY`, browse mode) parses GameEntry JSON.
 serde_json = { version = "1", optional = true }

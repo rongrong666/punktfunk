@@ -1,19 +1,18 @@
-//! The hosts page: saved (trusted/paired) hosts and live mDNS discovery as tap-to-connect
-//! tiles in a responsive grid, with a per-host "…" menu (connect / speed test / edit /
-//! forget) and a manual connect entry — the same card layout as the Linux and Apple clients.
+//! The hosts page: saved hosts as tap-to-connect tiles in a responsive grid, with a
+//! per-host "…" menu (connect / speed test / edit / forget) and a manual connect entry
+//! (with a WireGuard-mode option) — the same card layout as the Linux and Apple clients.
+//! This build has no mDNS discovery, no PIN pairing and no game library.
 
-use super::connect::{initiate, initiate_waking, open_console};
+use super::connect::{initiate, initiate_waking};
 use super::speed::SpeedState;
 use super::style::*;
 use super::{Screen, Svc, Target};
-use crate::discovery::DiscoveredHost;
-use crate::trust::KnownHosts;
+use crate::trust::{KnownHost, KnownHosts, WgPeer};
 use std::collections::HashMap;
 use windows_reactor::*;
 
 /// Overflow-menu item labels — `on_item_clicked` reports the clicked item by its text.
 const MENU_CONNECT: &str = "连接";
-const MENU_LIBRARY: &str = "浏览游戏库\u{2026}";
 const MENU_SPEED: &str = "测试网络速度\u{2026}";
 const MENU_WAKE: &str = "唤醒主机";
 /// One entry for every per-host property (name, address, MAC, clipboard sharing) — the
@@ -35,17 +34,12 @@ const MENU_PIN: &str = "固定磁贴: ";
 const MENU_UNPIN: &str = "取消固定: ";
 const MENU_FORGET: &str = "忘记\u{2026}";
 
-/// Whether the console (gamepad) UI is available in this build: the session binary ships
-/// its Skia `ui` feature on x64 only (no skia prebuilts for aarch64 yet) — the entry
-/// points compile everywhere but only show where `--browse` can actually run.
-const CONSOLE_UI_AVAILABLE: bool = cfg!(target_arch = "x86_64");
-
 /// Tile-grid metrics: minimum tile width before dropping a column, and the gap between tiles.
 const TILE_MIN_WIDTH: f64 = 320.0;
 const TILE_GAP: f64 = 12.0;
 
-/// Props for the hosts page: the services plus the changing discovery/status data that must
-/// drive its re-render (compared by value, so a new host list or error refreshes the page).
+/// Props for the hosts page: the services plus the changing status data that must
+/// drive its re-render (compared by value, so a new probe sweep or error refreshes the page).
 ///
 /// `forget` and `rename` are the per-host action state, and they live in ROOT (not this page's
 /// own `use_state`) on purpose: the "…" overflow is a WinUI `MenuFlyout`, whose item clicks are
@@ -58,15 +52,10 @@ const TILE_GAP: f64 = 12.0;
 #[derive(Clone)]
 pub(crate) struct HostsProps {
     pub(crate) svc: Svc,
-    pub(crate) hosts: Vec<DiscoveredHost>,
-    /// Saved hosts proven reachable by the periodic QUIC probe (keyed by `fp_hex`), OR'd with
-    /// live-advert presence to drive the Online pip — so a host reached only over a routed
-    /// network (Tailscale/VPN), which never advertises on mDNS, still reads Online.
+    /// Saved hosts proven reachable by the periodic QUIC probe (keyed by `fp_hex`), driving
+    /// the Online pip.
     pub(crate) probed: HashMap<String, bool>,
     pub(crate) status: String,
-    /// Connected-controller count (root state, mirrored from the gamepad service) — a
-    /// pad plus a paired host surfaces the "Open console UI" hint card.
-    pub(crate) pads: usize,
     pub(crate) forget: Option<(String, String)>,
     pub(crate) rename: Option<(String, String)>,
     /// Whether the "Add host" modal is open. Root state (like `forget`/`rename`), not the page's
@@ -93,10 +82,8 @@ impl PartialEq for HostsProps {
     fn eq(&self, other: &Self) -> bool {
         // Setters are identity-stable; only the value fields drive re-render.
         self.svc == other.svc
-            && self.hosts == other.hosts
             && self.probed == other.probed
             && self.status == other.status
-            && self.pads == other.pads
             && self.forget == other.forget
             && self.rename == other.rename
             && self.show_add == other.show_add
@@ -180,9 +167,9 @@ pub(crate) struct Hover {
     pub(crate) set: AsyncSetState<Option<String>>,
 }
 
-/// The status row at the bottom of a tile: the host's OS mark (when advertised), presence
-/// dot + Online/Offline, plus a trust chip only where it says something (see
-/// [`status_row_with`]).
+/// The status row at the bottom of a tile: the host's OS mark, presence dot + Online/Offline,
+/// plus a trust chip only where it says something (see [`status_row_with`]).
+#[allow(dead_code)] // the no-discovery build only renders the profile-carrying variant
 fn status_row(os: &str, online: Option<bool>, badge: Option<(&str, Pill)>) -> Element {
     status_row_with(os, online, badge, None)
 }
@@ -495,7 +482,6 @@ fn edit_editor(
 
 pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
     let ctx = &props.svc.ctx;
-    let hosts = props.hosts.as_slice();
     let status = props.status.as_str();
     let set_screen = &props.svc.set_screen;
     let set_status = &props.svc.set_status;
@@ -508,6 +494,12 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
     // would connect to the empty mount-time value. Mirror every keystroke into this stable ref (the
     // pair-screen PIN pattern). `manual` still drives the text box's displayed value.
     let manual_live = cx.use_ref(String::new());
+    // The WireGuard add-mode drafts, same live-ref mirror pattern as `manual_live`: the
+    // toggle's truth, the typed server public key, and THIS machine's generated keypair
+    // (private stays in the saved record; the public half is shown for the host admin).
+    let wg_live = cx.use_ref(false);
+    let wg_pubkey_live = cx.use_ref(String::new());
+    let wg_keypair_live = cx.use_ref(Option::<(String, String)>::None);
     // "Add host" modal open state lives in ROOT (see `HostsProps`).
     let show_add = props.show_add;
     let set_show_add = &props.set_show_add;
@@ -593,39 +585,6 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                         move || sa.call(true)
                     })
                     .into()];
-                // Re-query mDNS. The browse runs for the app's lifetime, and `mdns-sd` backs its
-                // re-query interval off to as much as an hour — so a host that appeared since
-                // startup, or whose announcement was lost to multicast, may need an actual ask.
-                actions.push(
-                    icon_btn("重新扫描网络中的主机", Symbol::Refresh)
-                        .on_click({
-                            let (c, st) = (ctx.clone(), set_status.clone());
-                            move || {
-                                if let Some(r) = c.shared.rescan.lock().unwrap().as_ref() {
-                                    r.request();
-                                }
-                                st.call("正在扫描网络\u{2026}".to_string());
-                            }
-                        })
-                        .into(),
-                );
-                // The couch UI's front door, beside the other page actions. Absent on ARM64,
-                // where the session binary ships without its Skia console.
-                if CONSOLE_UI_AVAILABLE {
-                    actions.push(
-                        icon_btn(
-                            "控制台 UI\u{2014}\u{2014}手柄驱动的客厅界面",
-                            Symbol::Play,
-                        )
-                        .on_click({
-                            let (c, ss, st) = (ctx.clone(), set_screen.clone(), set_status.clone());
-                            // No target: the console opens its OWN host view rather than
-                            // one host's library — the couch counterpart of this page.
-                            move || open_console(&c, None, &ss, &st)
-                        })
-                        .into(),
-                    );
-                }
                 actions.push(
                     icon_btn("键盘快捷键", Symbol::Keyboard)
                         .on_click({
@@ -669,8 +628,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
         );
     }
 
-    // Saved (trusted/paired) hosts — reachable even when mDNS isn't. A saved host that's also
-    // being advertised right now shows as Online (and is deduped out of the discovery section).
+    // Saved hosts — reachable even when the probe sweep hasn't refreshed yet.
     if !known.hosts.is_empty() {
         body.push(section("已保存的主机"));
         let mut tiles: Vec<Element> = Vec::new();
@@ -692,33 +650,17 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 mgmt_port: k.mgmt_port,
                 profile: None,
                 launch: None,
+                wg: k.wg.is_some(),
             };
-            // Online = advertising on mDNS OR proven reachable by the last probe sweep (the latter
-            // covers a routed/Tailscale host that never advertises — the display companion to
-            // dial-first).
-            let online = hosts
-                .iter()
-                .any(|h| h.fp_hex == k.fp_hex || (h.addr == k.addr && h.port == k.port))
-                || props.probed.get(&k.fp_hex).copied().unwrap_or(false);
-            // Learn what this host's live advert teaches while it's online: its wake MAC(s) (so we
-            // can wake it once it sleeps), its OS chain (so the tile's mark survives it going
-            // offline), and its management port — the last load-bearing rather than cosmetic, as
-            // a host moved off 47990 loses its library entirely once mDNS is gone unless we write
-            // the port down. No-op, and no disk write, when unchanged.
-            if let Some(a) = hosts
-                .iter()
-                .find(|h| h.fp_hex == k.fp_hex || (h.addr == k.addr && h.port == k.port))
-            {
-                crate::trust::learn_from_advert(
-                    &k.fp_hex,
-                    &k.addr,
-                    k.port,
-                    &a.mac,
-                    &a.os,
-                    a.mgmt_port,
-                );
-            }
-            let can_wake = !online && !k.mac.is_empty();
+            // Online = proven reachable by the last probe sweep. A WireGuard host's QUIC
+            // port only listens on the tunnel's loopback end, so a direct probe can never
+            // reach it — those tiles carry no presence pip at all.
+            let online = if k.wg.is_some() {
+                None
+            } else {
+                Some(props.probed.get(&k.fp_hex).copied().unwrap_or(false))
+            };
+            let can_wake = online == Some(false) && !k.mac.is_empty();
             let menu = {
                 let (svc, target) = (props.svc.clone(), target.clone());
                 let (sf, sr) = (set_forget.clone(), set_rename.clone());
@@ -752,12 +694,11 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                         }
 
                         items.push(menu_separator());
-                        // The library surfaces — mouse/KB page and the gamepad console UI — for
-                        // paired hosts only, because the mgmt API needs the paired identity.
-                        if k.paired {
-                            items.push(menu_item(MENU_LIBRARY));
+                        // The speed test dials the host's QUIC port directly, which a
+                        // WireGuard host only exposes inside the tunnel — skip it there.
+                        if k.wg.is_none() {
+                            items.push(menu_item(MENU_SPEED));
                         }
-                        items.push(menu_item(MENU_SPEED));
                         // An explicit wake only when the host is offline and we have a MAC.
                         if can_wake {
                             items.push(menu_item(MENU_WAKE));
@@ -842,11 +783,6 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                         MENU_CONNECT => {
                             initiate(&svc.ctx, target.clone(), &svc.set_screen, &svc.set_status)
                         }
-                        MENU_LIBRARY => {
-                            *svc.ctx.shared.target.lock().unwrap() = target.clone();
-                            super::library::start_fetch(&svc.ctx, &svc.set_library);
-                            svc.set_screen.call(Screen::Library);
-                        }
                         MENU_WAKE => crate::wol::wake(&target.mac, target.addr.parse().ok()),
                         MENU_SPEED => {
                             *svc.ctx.shared.target.lock().unwrap() = target.clone();
@@ -889,9 +825,14 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 &format!("{}:{}", k.addr, k.port),
                 status_row_with(
                     &k.os,
-                    Some(online),
-                    // Paired is the resting state — no chip; TOFU-only trust is worth one.
-                    (!k.paired).then_some(("已信任", Pill::Info)),
+                    online,
+                    // Paired is the resting state — no chip; TOFU-only trust and WireGuard
+                    // mode are worth one each.
+                    if k.wg.is_some() {
+                        Some(("WG", Pill::Info))
+                    } else {
+                        (!k.paired).then_some(("已信任", Pill::Info))
+                    },
                     // The dot carries the profile's own colour where it has one —
                     // that is what makes two bound hosts tell apart at a glance.
                     k.profile_id
@@ -930,7 +871,6 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 let mut pinned_target = pinned_base.clone();
                 pinned_target.profile = Some(id.clone());
                 let pinned_menu = {
-                    let (svc, target) = (props.svc.clone(), pinned_target.clone());
                     let (fp, pin_id) = (k.fp_hex.clone(), id.clone());
                     let (hosts_rev, set_hosts_rev) = (props.hosts_rev, props.set_hosts_rev.clone());
                     let link_host = k.clone();
@@ -944,25 +884,12 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                         .automation_name("More options")
                         .menu_flyout({
                             let mut items = Vec::new();
-                            // Same gate as the primary tile's: the mgmt API needs the paired
-                            // identity, so an unpaired host has nothing to show.
-                            if k.paired {
-                                items.push(menu_item(MENU_LIBRARY));
-                            }
                             items.push(menu_item(MENU_COPY_LINK));
                             items.push(menu_separator());
                             items.push(menu_item(unpin_label));
                             items
                         })
                         .on_item_clicked(move |item: String| match item.as_str() {
-                            MENU_LIBRARY => {
-                                // The shared target IS what the library page launches through, so
-                                // parking THIS tile's target here is what makes its grid launch
-                                // with the pinned profile.
-                                *svc.ctx.shared.target.lock().unwrap() = target.clone();
-                                super::library::start_fetch(&svc.ctx, &svc.set_library);
-                                svc.set_screen.call(Screen::Library);
-                            }
                             MENU_COPY_LINK => {
                                 let url = pf_client_core::deeplink::DeepLink::for_host(
                                     &link_host,
@@ -998,8 +925,12 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     &format!("{}:{}", k.addr, k.port),
                     status_row_with(
                         &k.os,
-                        Some(online),
-                        (!k.paired).then_some(("已信任", Pill::Info)),
+                        online,
+                        if k.wg.is_some() {
+                            Some(("WG", Pill::Info))
+                        } else {
+                            (!k.paired).then_some(("已信任", Pill::Info))
+                        },
                         Some((name.as_str(), accent.clone())),
                     ),
                     Some(pinned_menu),
@@ -1012,61 +943,6 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     })),
                 ));
             }
-        }
-        body.push(tile_grid(tiles, cols, TILE_GAP));
-    }
-
-    // Discovered hosts not already saved above.
-    body.push(section("本网络中的主机"));
-    let discovered: Vec<&DiscoveredHost> = hosts
-        .iter()
-        .filter(|h| {
-            !known.hosts.iter().any(|k| {
-                (!h.fp_hex.is_empty() && k.fp_hex == h.fp_hex)
-                    || (k.addr == h.addr && k.port == h.port)
-            })
-        })
-        .collect();
-    if discovered.is_empty() {
-        body.push(
-            card(
-                hstack((
-                    ProgressRing::indeterminate().width(18.0).height(18.0),
-                    text_block("正在搜索局域网\u{2026}").foreground(ThemeRef::SecondaryText),
-                ))
-                .spacing(12.0),
-            )
-            .into(),
-        );
-    } else {
-        let mut tiles: Vec<Element> = Vec::new();
-        for h in discovered {
-            let target = Target {
-                name: h.name.clone(),
-                addr: h.addr.clone(),
-                port: h.port,
-                fp_hex: (!h.fp_hex.is_empty()).then(|| h.fp_hex.clone()),
-                pair_optional: h.pair == "optional",
-                mac: h.mac.clone(),
-                mgmt_port: h.mgmt_port,
-                profile: None,
-                launch: None,
-            };
-            let (ctx2, ss, st) = (ctx.clone(), set_screen.clone(), set_status.clone());
-            let (badge, kind) = if h.pair == "required" {
-                ("PIN", Pill::Info)
-            } else {
-                ("开放", Pill::Neutral)
-            };
-            tiles.push(host_tile(
-                &format!("{}:{}", h.addr, h.port),
-                &hover,
-                &h.name,
-                &format!("{}:{}", h.addr, h.port),
-                status_row(&h.os, None, Some((badge, kind))),
-                None,
-                Some(Box::new(move || initiate(&ctx2, target.clone(), &ss, &st))),
-            ));
         }
         body.push(tile_grid(tiles, cols, TILE_GAP));
     }
@@ -1123,6 +999,11 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             manual_live.clone(),
             set_show_add.clone(),
         );
+        let (wg_live, wg_pubkey_live, wg_keypair_live) = (
+            wg_live.clone(),
+            wg_pubkey_live.clone(),
+            wg_keypair_live.clone(),
+        );
         move || {
             let text = live.borrow();
             let text = text.trim();
@@ -1132,6 +1013,49 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             let (addr, port) = match text.rsplit_once(':') {
                 Some((a, p)) => (a.to_string(), p.parse().unwrap_or(9777)),
                 None => (text.to_string(), 9777),
+            };
+            let wg = if *wg_live.borrow() {
+                // Validate the server key NOW (a bad key must not close the modal on a
+                // dead record), and this machine's keypair — generated when the modal
+                // opened, so it is always here, but regenerate defensively.
+                let server_pub = wg_pubkey_live.borrow().trim().to_string();
+                if let Err(e) = pf_wgtunnel::keys::parse_public_key(&server_pub) {
+                    st.call(format!("WireGuard 服务器公钥无效：{e}"));
+                    return;
+                }
+                let (client_priv, _) = wg_keypair_live
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(pf_wgtunnel::keys::generate_keypair);
+                let peer = WgPeer {
+                    server_pub,
+                    client_priv,
+                };
+                // Persist the WG keys on this host's record (updating it in place when the
+                // address is already saved), so the next connect needs no dialog at all.
+                let mut known = KnownHosts::load();
+                if let Some(h) = known
+                    .hosts
+                    .iter_mut()
+                    .find(|h| h.addr == addr && h.port == port)
+                {
+                    h.wg = Some(peer);
+                } else {
+                    known.hosts.push(KnownHost {
+                        name: addr.clone(),
+                        addr: addr.clone(),
+                        port,
+                        wg: Some(peer),
+                        ..Default::default()
+                    });
+                }
+                if let Err(e) = known.save() {
+                    st.call(format!("无法保存主机记录：{e}"));
+                    return;
+                }
+                true
+            } else {
+                false
             };
             sa.call(false);
             initiate(
@@ -1143,21 +1067,29 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     fp_hex: None,
                     pair_optional: false,
                     mac: Vec::new(),
-                    // Added by hand, so nothing has told us where its mgmt API is: fall back to
-                    // 47990 (exactly today's behaviour) until an advert teaches us otherwise.
-                    // A host that moved its mgmt port AND is never visible on mDNS still needs the
-                    // host to announce the port in-band — see the note in `Target::mgmt_port`.
                     mgmt_port: None,
                     profile: None,
                     launch: None,
+                    wg,
                 },
                 &ss,
                 &st,
             );
         }
     };
+    // This machine's WG keypair, generated when the modal opens (never per render): the public
+    // half is what the user hands to the host admin for the peers list. Reopening the modal
+    // keeps the same keypair, so an admin who already added it never sees it change.
+    if show_add && wg_keypair_live.borrow().is_none() {
+        wg_keypair_live.set(Some(pf_wgtunnel::keys::generate_keypair()));
+    }
+    let wg_client_pub = wg_keypair_live
+        .borrow()
+        .as_ref()
+        .map(|(_, p)| p.clone())
+        .unwrap_or_default();
     let modal = dialog_surface(
-        vstack((
+        scroll_view(vstack((
             text_block("添加主机").font_size(20.0).bold(),
             text_block(
                 "输入主机的 IP 地址或名称。仅在使用非默认端口时才附加 :port\
@@ -1177,6 +1109,38 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                     }
                 })
                 .margin(edges(0.0, 6.0, 0.0, 0.0)),
+            ToggleSwitch::new(false)
+                .header("WireGuard 模式（公网串流，只需一个 UDP 端口）")
+                .on_content("开")
+                .off_content("关")
+                .on_toggled({
+                    let live = wg_live.clone();
+                    move |v: bool| live.set(v)
+                }),
+            text_box("")
+                .header("服务器公钥（仅 WireGuard 模式）")
+                .placeholder_text("主机端 pf-wgtunnel genkey 生成的 .pub 内容")
+                .on_text_changed({
+                    let live = wg_pubkey_live.clone();
+                    move |s: String| live.set(s)
+                }),
+            vstack((
+                text_block("本机公钥 —— 发给主机管理员，写入其 peers 列表（每行一个）")
+                    .font_size(12.0)
+                    .foreground(ThemeRef::SecondaryText)
+                    .wrap()
+                    .horizontal_alignment(HorizontalAlignment::Left),
+                text_block(if wg_client_pub.is_empty() {
+                    "（打开此对话框时生成）"
+                } else {
+                    &wg_client_pub
+                })
+                .font_size(11.0)
+                .font_family("Consolas")
+                .wrap()
+                .horizontal_alignment(HorizontalAlignment::Left),
+            ))
+            .spacing(2.0),
             hstack((
                 button("连接")
                     .accent()
@@ -1191,7 +1155,7 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
             .horizontal_alignment(HorizontalAlignment::Right)
             .margin(edges(0.0, 6.0, 0.0, 0.0)),
         ))
-        .spacing(12.0),
+        .spacing(12.0)),
     )
     .max_width(460.0)
     .horizontal_alignment(HorizontalAlignment::Center)

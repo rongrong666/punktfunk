@@ -61,6 +61,7 @@ pub fn install() {
 ///
 /// The token is matched against [`ICONS`] before it reaches a path join, so nothing a host sends
 /// can steer this at a file of its choosing.
+#[allow(dead_code)] // only the removed library page rendered launcher marks
 pub fn uri(token: Option<&str>) -> Option<String> {
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
     let dir = DIR.get_or_init(dir).as_ref()?;

@@ -288,6 +288,19 @@ pub fn parse_hex32(s: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
+/// WireGuard tunnel config for a host (`pf-wgtunnel`): when set, the session dials an embedded
+/// loopback relay that carries QUIC + the video data plane INSIDE one WireGuard UDP flow to the
+/// host's single public port. `server_pub` pins the host at the WG layer; the QUIC certificate
+/// pin (`fp_hex`) is still learned (TOFU over the authenticated tunnel) and enforced afterwards.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WgPeer {
+    /// The host gate's base64 x25519 public key (`pf-wgtunnel genkey` on the host).
+    pub server_pub: String,
+    /// THIS client's base64 x25519 private key, generated per host at add time; the host's
+    /// `--wg-peers` file carries the matching public key.
+    pub client_priv: String,
+}
+
 /// One trusted host: its pinned certificate fingerprint plus how we got there (TOFU or a
 /// PIN ceremony) and where we last reached it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -350,6 +363,9 @@ pub struct KnownHost {
     /// it** — `fp_hex`/`addr:port` stay the lookup keys; this is groundwork.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// WireGuard tunnel config — see [`WgPeer`]. `None` = plain direct connect (unchanged).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wg: Option<WgPeer>,
 }
 
 impl Default for KnownHost {
@@ -372,6 +388,7 @@ impl Default for KnownHost {
             profile_id: None,
             pinned_profiles: Vec::new(),
             id: Some(crate::profiles::new_record_uuid()),
+            wg: None,
         }
     }
 }
@@ -802,6 +819,29 @@ pub fn learn_mgmt_port_by_fp(fp_hex: &str, mgmt_port: u16) {
         return;
     }
     h.mgmt_port = Some(mgmt_port);
+    let _ = known.save();
+}
+
+/// Learn a host's certificate fingerprint after a WireGuard-mode first connect, keyed by the
+/// saved record's addr:port: the WG static key authenticated the host at the tunnel layer, so
+/// the cert pin the session just observed is safe to persist (and is enforced from then on).
+/// No-op when the record already carries a pin or none exists.
+pub fn learn_fp_by_addr(addr: &str, port: u16, fp_hex: &str) {
+    if fp_hex.is_empty() {
+        return;
+    }
+    let mut known = KnownHosts::load();
+    let Some(h) = known
+        .hosts
+        .iter_mut()
+        .find(|h| h.addr == addr && h.port == port)
+    else {
+        return;
+    };
+    if !h.fp_hex.is_empty() {
+        return;
+    }
+    h.fp_hex = fp_hex.to_string();
     let _ = known.save();
 }
 

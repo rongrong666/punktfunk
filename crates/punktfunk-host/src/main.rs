@@ -709,6 +709,22 @@ fn real_main() -> Result<()> {
                 Some(p) if p.trim().is_empty() => bail!("--pairing-pin must not be empty"),
                 p => p.map(str::to_string),
             };
+            // WireGuard gate mode: `--wg-key` + `--wg-peers` together. The gate owns the only
+            // public UDP port; QUIC + the data plane go loopback-only and ride the tunnel, so
+            // pairing (the tunnel authenticates peers) and mDNS (nothing to discover publicly)
+            // are forced off and the data plane pins the fixed inner port.
+            let wg = match (get("--wg-key"), get("--wg-peers")) {
+                (None, None) => None,
+                (Some(k), Some(p)) => Some(native::WgGate {
+                    key_path: std::path::PathBuf::from(k),
+                    peers_path: std::path::PathBuf::from(p),
+                    listen: get("--wg-listen").map(|s| {
+                        s.parse()
+                            .unwrap_or_else(|_| panic!("bad --wg-listen address: {s}"))
+                    }),
+                }),
+                _ => bail!("--wg-key and --wg-peers must be given together"),
+            };
             native::run(native::Punktfunk1Options {
                 port: get("--port").and_then(|s| s.parse().ok()).unwrap_or(9777),
                 source,
@@ -724,18 +740,24 @@ fn real_main() -> Result<()> {
                 // --allow-tofu opts into trust-on-first-use — the host then accepts unpaired
                 // clients and advertises pair=optional. Pairing is always armed so a PIN is
                 // available (logged at startup); `--require-pairing`/`--allow-pairing` are now
-                // the default and accepted as no-ops for back-compat.
-                require_pairing: !args.iter().any(|a| a == "--allow-tofu"),
-                allow_pairing: true,
+                // the default and accepted as no-ops for back-compat. WireGuard gate mode
+                // instead authenticates at the tunnel, so both are forced off there.
+                require_pairing: wg.is_none() && !args.iter().any(|a| a == "--allow-tofu"),
+                allow_pairing: wg.is_none(),
                 pairing_pin,
                 paired_store: None,
                 // Fixed data-plane port: bind it and stream direct (no hole-punch), removing the
                 // ~2.5 s punch-timeout on a firewalled host. Default (absent) = a random port +
-                // hole-punch. Also honors PUNKTFUNK_DATA_PORT.
-                data_port: get("--data-port")
-                    .map(str::to_string)
-                    .or_else(|| std::env::var("PUNKTFUNK_DATA_PORT").ok())
-                    .and_then(|s| s.parse().ok()),
+                // hole-punch. Also honors PUNKTFUNK_DATA_PORT. WireGuard gate mode pins the fixed
+                // INNER port on loopback instead (hole-punch semantics kept — see handshake.rs).
+                data_port: if wg.is_some() {
+                    Some(native::WG_DATA_PORT)
+                } else {
+                    get("--data-port")
+                        .map(str::to_string)
+                        .or_else(|| std::env::var("PUNKTFUNK_DATA_PORT").ok())
+                        .and_then(|s| s.parse().ok())
+                },
                 // Disconnect-detection latency (QUIC control-connection idle timeout): --idle-timeout-ms
                 // overrides PUNKTFUNK_IDLE_TIMEOUT_MS; absent = the core default (8s).
                 idle_timeout: get("--idle-timeout-ms")
@@ -743,7 +765,10 @@ fn real_main() -> Result<()> {
                     .filter(|&ms| ms > 0)
                     .map(std::time::Duration::from_millis)
                     .or_else(native::idle_timeout_from_env),
-                mdns: !args.iter().any(|a| a == "--no-mdns") && discovery::mdns_enabled(),
+                mdns: wg.is_none()
+                    && !args.iter().any(|a| a == "--no-mdns")
+                    && discovery::mdns_enabled(),
+                wg,
             })
         }
         // Windows service control: install/uninstall/start/stop/status + the SCM `run` entry point.
@@ -1112,6 +1137,13 @@ PUNKTFUNK1-HOST OPTIONS:
                                  a real LAN (a guessable PIN defeats the ceremony's rate limit)
     --no-mdns                    skip the _punktfunk._udp mDNS advert (multicast-dead environments;
                                  clients use --connect HOST:PORT). Also PUNKTFUNK_MDNS=0
+    --wg-key <FILE>              WireGuard gate mode: host x25519 private key (base64, from
+                                 `pf-wgtunnel genkey`). Requires --wg-peers. The gate owns the ONLY
+                                 public UDP port (--port); QUIC + the data plane bind loopback and
+                                 ride inside the tunnel. Pairing and mDNS are forced off; the data
+                                 plane pins inner port 9778
+    --wg-peers <FILE>            allowed client public keys, one base64 key per line (# comments
+                                 ok). Generate on each client with `pf-wgtunnel genkey`
 
 SPIKE OPTIONS:
     --source <synthetic|portal|kwin-virtual>

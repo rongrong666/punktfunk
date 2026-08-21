@@ -9,8 +9,7 @@
 //! `--headless --speed-test` keeps a decode-less CLI measurement path.
 //!
 //! Usage:
-//!   punktfunk-client                          (open the WinUI 3 window: host list, settings, pairing)
-//!   punktfunk-client --discover               (list punktfunk hosts on the LAN)
+//!   punktfunk-client                          (open the WinUI 3 window: host list, settings)
 //!   punktfunk-client --headless --speed-test --connect host[:port]
 //!                    (measure the path: probe burst → goodput / loss / recommended bitrate)
 
@@ -26,8 +25,6 @@ mod app;
 // (design/client-deep-links.md §4.2).
 #[cfg(windows)]
 mod deeplink;
-#[cfg(windows)]
-mod discovery;
 #[cfg(windows)]
 mod gpu;
 #[cfg(windows)]
@@ -87,11 +84,6 @@ fn main() {
         && !deeplink::claim_primary()
         && deeplink::forward_to_primary(url)
     {
-        return;
-    }
-
-    if flag("--discover") {
-        discover_and_print();
         return;
     }
 
@@ -233,38 +225,6 @@ fn run_headless_cli(args: &[String], identity: (String, String)) {
     // punktfunk-session binary, which the deleted in-process frame-count path was replaced by.
     eprintln!("--headless supports only --speed-test now \u{2014} run the windowed app to stream");
     std::process::exit(2);
-}
-
-/// `--discover`: browse the LAN for punktfunk hosts (mDNS) and print them, then exit.
-#[cfg(windows)]
-fn discover_and_print() {
-    use std::time::{Duration, Instant};
-    println!("Browsing the LAN for Punktfunk hosts (~5 s)…");
-    let (rx, _rescan) = discovery::browse();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut seen = std::collections::HashSet::new();
-    while Instant::now() < deadline {
-        while let Ok(h) = rx.try_recv() {
-            if seen.insert(h.key.clone()) {
-                println!(
-                    "  {}  {}:{}  pair={}  fp={}",
-                    h.name,
-                    h.addr,
-                    h.port,
-                    if h.pair.is_empty() {
-                        "optional"
-                    } else {
-                        &h.pair
-                    },
-                    if h.fp_hex.is_empty() { "-" } else { &h.fp_hex },
-                );
-            }
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    if seen.is_empty() {
-        println!("  (none found — is a host running with --native / punktfunk1-host?)");
-    }
 }
 
 /// WinUI 3 / Direct3D11 / WASAPI / SDL3 are Windows turf; this stub keeps `cargo build

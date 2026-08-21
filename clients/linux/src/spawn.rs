@@ -51,6 +51,7 @@ fn plan_for(req: &ConnectRequest, fp_hex: &str, tofu: bool, opts: &SpawnOpts) ->
             mac: req.mac.clone(),
             id: None,
             mgmt_port: None, // this shell resolves the library port itself (`mgmt_port_for`)
+            wg: None, // resolved from the stored record inside `for_target`
         },
         req.launch.as_ref().map(|(id, _)| id.clone()),
         // A plain card click carries no one-off: the resolver honors the host's own binding

@@ -1,17 +1,31 @@
 //! The trust gate and session lifecycle glue: `initiate` routes a connect through the trust
-//! rules (pinned → silent, `pair=optional` → TOFU, otherwise → PIN), `connect_with` starts the
-//! session worker and drives navigation from its events, and the "request access"
-//! (delegated-approval) flow parks an identified connect until the operator approves it.
+//! rules (pinned → silent, WireGuard-mode → tunnel-authenticated, `pair=optional` → TOFU),
+//! `connect_with` starts the session worker and drives navigation from its events, and the
+//! "request access" (delegated-approval) flow parks an identified connect until the operator
+//! approves it. This build has NO PIN pairing ceremony and no mDNS discovery.
 
 use super::style::*;
 use super::{AppCtx, Screen, Svc, Target};
-use crate::discovery::DiscoveredHost;
 use crate::trust::{self, KnownHost, KnownHosts};
 use pf_client_core::orchestrate::{WakeOutcome, WakeWait};
+use punktfunk_core::client::NativeClient;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use windows_reactor::*;
+
+/// The no-pairing refusal: this build removed the PIN ceremony, so a host with no stored
+/// fingerprint and no WireGuard config cannot be connected — say so and stay put.
+fn refuse_unpaired(target: &Target, set_status: &AsyncSetState<String>) {
+    set_status.call(format!(
+        "{} 尚未与本设备配对 —— 此版本已移除 PIN 配对流程，请改用 WireGuard 模式添加。",
+        if target.name.is_empty() {
+            &target.addr
+        } else {
+            &target.name
+        }
+    ));
+}
 
 /// The trust gate (mirrors the GTK client's `initiate_connect`): pinned fingerprint → silent
 /// connect; known address → stored pin; advertised `pair=optional` → TOFU; otherwise → PIN
@@ -69,13 +83,20 @@ fn initiate_opts(
         wake_on_fail,
         ..ConnectOpts::default()
     };
-    if let Some(pin) = pin {
+    // WireGuard mode authenticates both ends in the tunnel handshake — no pin needed, and the
+    // host's TLS fingerprint is learned from the session's own Welcome on first connect.
+    let wg = target.wg
+        || known
+            .find_by_addr(&target.addr, target.port)
+            .is_some_and(|k| k.wg.is_some());
+    if wg {
+        connect_with(ctx, &target, pin, set_screen, set_status, opts);
+    } else if let Some(pin) = pin {
         connect_with(ctx, &target, Some(pin), set_screen, set_status, opts);
     } else if target.pair_optional {
         connect_with(ctx, &target, None, set_screen, set_status, opts); // TOFU
     } else {
-        *ctx.shared.target.lock().unwrap() = target;
-        set_screen.call(Screen::Pair);
+        refuse_unpaired(&target, set_status);
     }
 }
 
@@ -129,7 +150,28 @@ fn initiate_launch_opts(
                 .and_then(|k| trust::parse_hex32(&k.fp_hex))
         });
     let Some(pin) = pin else {
-        set_screen.call(Screen::Pair);
+        // WG targets need no pin (tunnel-authenticated); anything else has no pairing
+        // ceremony left to detour through in this build.
+        let wg = target.wg
+            || known
+                .find_by_addr(&target.addr, target.port)
+                .is_some_and(|k| k.wg.is_some());
+        if !wg {
+            refuse_unpaired(&target, set_status);
+            return;
+        }
+        connect_with(
+            ctx,
+            &target,
+            None,
+            set_screen,
+            set_status,
+            ConnectOpts {
+                launch: Some(launch),
+                wake_on_fail,
+                ..ConnectOpts::default()
+            },
+        );
         return;
     };
     connect_with(
@@ -190,6 +232,7 @@ impl Default for ConnectOpts {
     }
 }
 
+#[allow(dead_code)] // the plain-connect helper of the removed pairing screens
 pub(crate) fn connect(
     ctx: &Arc<AppCtx>,
     target: &Target,
@@ -240,10 +283,22 @@ fn connect_spawn(
             .clone()
             .filter(|f| trust::parse_hex32(f).is_some())
     });
-    let Some(fp_hex) = fp_hex else {
-        *ctx.shared.target.lock().unwrap() = target.clone();
-        set_screen.call(Screen::Pair);
-        return;
+    let fp_hex = match fp_hex {
+        Some(fp) => fp,
+        // WG mode connects with NO pinned fingerprint — the tunnel handshake is the
+        // authentication, and the session child learns the host's TLS fingerprint from the
+        // Welcome (learn_fp_by_addr). Empty fp_arg → spawn_session passes no --fp.
+        None if target.wg
+            || KnownHosts::load()
+                .find_by_addr(&target.addr, target.port)
+                .is_some_and(|k| k.wg.is_some()) =>
+        {
+            String::new()
+        }
+        None => {
+            refuse_unpaired(target, set_status);
+            return;
+        }
     };
 
     // A fresh child slot per spawn, installed where Disconnect/Cancel can reach it.
@@ -293,7 +348,7 @@ fn connect_spawn(
             }
             match event {
                 SpawnEvent::Ready => {
-                    if persist_paired || tofu {
+                    if (persist_paired || tofu) && !fp_hex.is_empty() {
                         // Request-access: the operator approved this device — record the
                         // host PAIRED so future connects are silent. Plain TOFU persists
                         // it *unpaired* (pinned): the child connected pinned to the
@@ -322,11 +377,11 @@ fn connect_spawn(
                 SpawnEvent::Exited { error, ended, code } => {
                     match error {
                         Some((msg, true)) => {
-                            // Pinned-fingerprint mismatch / pairing required → re-pair via
-                            // the PIN screen. The host ANSWERED, so never the wake fallback.
+                            // Pinned-fingerprint mismatch → show the reason and return to the
+                            // host list (no PIN re-pair screen in this build). The host
+                            // ANSWERED, so never the wake fallback.
                             st.call(msg);
-                            *shared.target.lock().unwrap() = target.clone();
-                            ss.call(Screen::Pair);
+                            ss.call(Screen::Hosts);
                         }
                         Some((_, false))
                             if wake_on_fail && ctx2.settings.lock().unwrap().auto_wake =>
@@ -371,6 +426,10 @@ fn connect_spawn(
 /// `target = None` opens the console's own host view (discovery, pairing, settings) — the
 /// couch entry point that isn't tied to one host; `Some` opens straight into that host's
 /// library.
+///
+/// Unused in this build (the game-library UI was removed); kept so `--browse` spawning
+/// stays available for a future couch entry point.
+#[allow(dead_code)]
 pub(crate) fn open_console(
     ctx: &Arc<AppCtx>,
     target: Option<Target>,
@@ -432,6 +491,7 @@ pub(crate) fn open_console(
 /// operator approves this device in its console (or web UI), showing a cancelable "waiting"
 /// screen meanwhile. On approval the SAME connection is admitted (no reconnect) and the host is
 /// saved as paired, so later connects are silent.
+#[allow(dead_code)] // entry points went with the removed pairing/discovery screens
 pub(crate) fn request_access(props: &Svc, target: &Target) {
     let ctx = &props.ctx;
     // Pin the advertised certificate for a discovered host (defence against a host impostor while
@@ -460,16 +520,15 @@ pub(crate) fn request_access(props: &Svc, target: &Target) {
 }
 
 /// The Wake-on-LAN "wait until up" flow (mirrors the Apple `HostWaker`): the FALLBACK after a
-/// failed dial-first attempt ([`initiate_waking`]) to a non-advertising saved host with a MAC.
-/// Send a magic packet, show a cancelable "Waking…" screen, and POLL mDNS for the host to
-/// reappear — re-sending the packet periodically — on a bounded deadline (a cold box takes far
-/// longer to POST/boot/re-advertise than a connect attempt will sit). On reappearance we dial it
-/// (re-keying the saved host when it came back on a new IP); on timeout or Cancel we return to
-/// the host list.
+/// failed dial-first attempt ([`initiate_waking`]) to an offline saved host with a MAC.
+/// Send a magic packet, show a cancelable "Waking…" screen, and PROBE the host's QUIC port
+/// until it answers — re-sending the packet periodically — on a bounded deadline (a cold box
+/// takes far longer to POST/boot than a connect attempt will sit). This build has no mDNS
+/// discovery, so the probe (not an advert) is the online signal; when the host answers we
+/// dial it as saved. On timeout or Cancel we return to the host list.
 ///
 /// The cadence is [`WakeWait`], shared with the GTK shell and ported from Apple's `HostWaker`
-/// (design/client-architecture-split.md §3) — the comment this function used to carry ("mirrors
-/// the Apple HostWaker") is now literally true instead of aspirational.
+/// (design/client-architecture-split.md §3).
 fn wake_and_connect(
     ctx: &Arc<AppCtx>,
     target: Target,
@@ -490,66 +549,23 @@ fn wake_and_connect(
 
     let (ctx, ss, st) = (ctx.clone(), set_screen.clone(), set_status.clone());
     std::thread::spawn(move || {
-        let (rx, rescan) = crate::discovery::browse();
-        let mut seen: Vec<DiscoveredHost> = Vec::new();
         let mut wait = WakeWait::new();
-        // A waking host starts advertising at a moment we can't predict, and `mdns-sd`'s own
-        // re-query interval has doubled well past a minute by the time a boot finishes — so ask
-        // again periodically instead of waiting to be told (matches the GTK client's wake wait).
-        let mut ticks: u32 = 0;
         loop {
             // Cancel already returned the UI to the host list — stop re-sending and tear down.
             if cancel.load(Ordering::SeqCst) {
                 return;
             }
-            // Drain freshly-resolved adverts into the accumulator (newest wins per key).
-            while let Ok(h) = rx.try_recv() {
-                if let Some(e) = seen.iter_mut().find(|e| e.key == h.key) {
-                    *e = h;
-                } else {
-                    seen.push(h);
-                }
-            }
-            // Match on the pinned fingerprint first (it survives an IP change), else last address.
-            let resolved = seen
-                .iter()
-                .find(|h| match &target.fp_hex {
-                    Some(fp) if !h.fp_hex.is_empty() => h.fp_hex == *fp,
-                    _ => h.addr == target.addr && h.port == target.port,
-                })
-                .map(|h| (h.addr.clone(), h.port));
+            // No discovery in this build: a bounded, trust-agnostic QUIC handshake probe is
+            // the online signal (the same probe the hosts page's reachability sweep uses).
+            let online = NativeClient::probe(&target.addr, target.port, Duration::from_millis(2500));
 
-            let tick = wait.tick(resolved.is_some());
+            let tick = wait.tick(online);
             if tick.send_packet {
                 crate::wol::wake(&target.mac, target.addr.parse().ok());
             }
             match tick.outcome {
                 Some(WakeOutcome::Online) => {
-                    let mut target = target.clone();
-                    // Came back on a new IP (DHCP): dial the fresh address and re-key the saved
-                    // host so the pin stays reachable next time (keyed by fingerprint;
-                    // addr/port overwritten, `paired`/`mac` preserved by `upsert`).
-                    // Plain `upsert` on purpose — this is an mDNS advert talking, not a trust
-                    // decision, so it may never retire another saved host at that address.
-                    if let Some((addr, port)) =
-                        resolved.filter(|(a, p)| *a != target.addr || *p != target.port)
-                    {
-                        target.addr = addr;
-                        target.port = port;
-                        if let Some(fp) = target.fp_hex.clone() {
-                            let mut k = KnownHosts::load();
-                            k.upsert(KnownHost {
-                                name: target.name.clone(),
-                                addr: target.addr.clone(),
-                                port: target.port,
-                                fp_hex: fp,
-                                mac: target.mac.clone(),
-                                ..Default::default()
-                            });
-                            let _ = k.save();
-                        }
-                    }
-                    initiate(&ctx, target, &ss, &st);
+                    initiate(&ctx, target.clone(), &ss, &st);
                     return;
                 }
                 Some(WakeOutcome::TimedOut) => {
@@ -558,10 +574,6 @@ fn wake_and_connect(
                     return;
                 }
                 None => {}
-            }
-            ticks += 1;
-            if ticks.is_multiple_of(5) {
-                rescan.request();
             }
             std::thread::sleep(Duration::from_secs(1));
         }

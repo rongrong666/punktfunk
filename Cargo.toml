@@ -21,6 +21,7 @@ members = [
     "crates/pf-host-config",
     "crates/pf-gpu",
     "crates/pf-zerocopy",
+    "crates/pf-wgtunnel",
     "crates/pf-frame",
     "crates/pf-win-display",
     "crates/pf-encode",

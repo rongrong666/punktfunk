@@ -157,10 +157,11 @@ pub(crate) fn spawn_session(
             name: String::new(), // display-only; this shell's screens carry their own copy
             addr: addr.to_string(),
             port,
-            fp_hex: Some(fp_hex.to_string()),
+            fp_hex: (!fp_hex.is_empty()).then(|| fp_hex.to_string()),
             mac: Vec::new(), // wake ran before this spawn (initiate_waking) — not the plan's job
             id: None,
             mgmt_port: None, // the library fetch runs in the shell (`Target`), never off a spawn plan
+            wg: None, // resolved from the stored record inside `for_target`
         },
         launch.map(str::to_string),
         profile.map(str::to_string),

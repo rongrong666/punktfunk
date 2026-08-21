@@ -1,0 +1,21 @@
+[package]
+name = "pf-wgtunnel"
+version = "0.31.0"
+edition = "2021"
+description = "Userspace WireGuard tunnel shell for punktfunk/1 — one public UDP port carries WG, the inner QUIC control plane and video data plane ride inside it."
+
+[dependencies]
+# 0.4 (not 0.5/0.6): 0.5+ pins curve25519-dalek 4.0.0-rc.3 via x25519-dalek
+# 2.0.0-rc.3, which cargo cannot resolve next to punktfunk-core's spake2 →
+# curve25519-dalek ^4. 0.4 uses x25519-dalek 1.x / curve25519-dalek 3.x.
+boringtun = "0.4"
+base64 = "0.22"
+socket2 = { version = "0.6", features = ["all"] }
+
+[[bin]]
+name = "pf-wgtunnel"
+path = "src/main.rs"
+
+[lib]
+name = "pf_wgtunnel"
+path = "src/lib.rs"

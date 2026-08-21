@@ -408,6 +408,9 @@ pub(super) async fn negotiate(
     source: Punktfunk1Source,
     frames: u32,
     data_port: Option<u16>,
+    // WireGuard gate mode: bind the data plane on LOOPBACK at the fixed inner port and keep
+    // hole-punch semantics, so the host streams back to the gate's observed flow socket.
+    wg_mode: bool,
     // Session bring-up trace (latency plan P0.1): `welcome`/`start` stamps land here, and the
     // Welcome-time display prep threads it into the pipeline-build stages.
     bringup: &Arc<crate::bringup::Trace>,
@@ -780,7 +783,25 @@ pub(super) async fn negotiate(
     // bind→read→drop→rebind window a concurrent session could race for a fixed port). A fixed
     // `--data-port` yields `direct = true` (stream straight to the client's reported address,
     // no punch-wait); otherwise a random ephemeral port + hole-punch.
-    let (data_sock, direct) = bind_data_socket(data_port)?;
+    //
+    // WireGuard gate mode is different on BOTH axes: the socket binds the fixed inner port on
+    // LOOPBACK (the gate relays tunnel traffic to it), and `direct` stays false — the client's
+    // "reported address" (127.0.0.1:<its local port>) only exists on the far side of the tunnel,
+    // so the host must stream to the gate flow socket it actually observes a punch from.
+    let (data_sock, direct) = if wg_mode {
+        let port = data_port
+            .filter(|p| *p != 0)
+            .unwrap_or(super::WG_DATA_PORT);
+        let sock = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, port)).map_err(|e| {
+            anyhow::anyhow!(
+                "WireGuard data plane: bind 127.0.0.1:{port}: {e} \
+                 (a concurrent WG session already holds the fixed inner data port?)"
+            )
+        })?;
+        (sock, false)
+    } else {
+        bind_data_socket(data_port)?
+    };
     let udp_port = data_sock.local_addr()?.port();
 
     // The session's video geometry (see the `shard_payload` field below). Resolved before the

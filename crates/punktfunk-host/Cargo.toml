@@ -21,6 +21,9 @@ pf-gpu = { path = "../pf-gpu" }
 # Linux GPU zero-copy plumbing (CUDA/EGL/Vulkan dmabuf import + the isolated worker), extracted
 # to a leaf crate (plan §W6). Compiles empty on non-Linux, so it lives in the main deps.
 pf-zerocopy = { path = "../pf-zerocopy" }
+# Userspace WireGuard gate (`--wg-key`/`--wg-peers`): one public UDP port carries WG, the QUIC
+# control plane + video data plane ride inside it as synthetic IPv4/UDP packets.
+pf-wgtunnel = { path = "../pf-wgtunnel" }
 # Shared frame/format vocabulary (CapturedFrame/PixelFormat/…), HDR metadata, thread QoS, and the
 # Windows DXGI capture identity — the leaf both capture and encode speak (plan §W6).
 pf-frame = { path = "../pf-frame" }

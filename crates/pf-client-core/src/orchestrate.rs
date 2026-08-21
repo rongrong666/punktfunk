@@ -44,6 +44,9 @@ pub struct HostTarget {
     /// [`crate::library::DEFAULT_MGMT_PORT`] there is what made a moved mgmt port work on the
     /// LAN but not over a VPN. `None` = unknown, fall back to the constant.
     pub mgmt_port: Option<u16>,
+    /// WireGuard tunnel config (`pf-wgtunnel`): the session dials its embedded loopback relay
+    /// instead of `addr:port` directly; `addr:port` remains the WG server's public endpoint.
+    pub wg: Option<crate::trust::WgPeer>,
 }
 
 impl From<&KnownHost> for HostTarget {
@@ -56,6 +59,7 @@ impl From<&KnownHost> for HostTarget {
             mac: h.mac.clone(),
             id: h.id.clone(),
             mgmt_port: h.mgmt_port,
+            wg: h.wg.clone(),
         }
     }
 }
@@ -153,7 +157,13 @@ impl ConnectPlan {
         // come from the same discovery snapshot the card was drawn from — so `wake` has to be
         // re-decided against that MAC rather than the record's.
         plan.wake = plan.settings.auto_wake && !host.mac.is_empty();
+        // The WireGuard config lives ONLY in the store (the shell never carries it on its
+        // own targets), so a caller-built target picks it up here, keyed off the same record
+        // the rest of the plan resolved from.
         plan.host = host;
+        if plan.host.wg.is_none() {
+            plan.host.wg = stored.wg.clone();
+        }
         plan
     }
 
@@ -210,10 +220,28 @@ impl ConnectPlan {
     /// The session binary's argv for this plan — the one place the flags are assembled, so a
     /// shell, the CLI and a URL launch cannot spawn subtly different sessions.
     pub fn session_args(&self) -> Vec<String> {
-        let mut args = vec![
-            "--connect".into(),
-            format!("{}:{}", self.host.addr, self.host.port),
-        ];
+        // WireGuard mode: the session dials its embedded relay on loopback; the real public
+        // endpoint rides the --wg-* flags so the relay knows where to send tunnel traffic.
+        let (dial, wg) = match &self.host.wg {
+            Some(wg) => (
+                "127.0.0.1:9777".to_string(),
+                Some((
+                    format!("{}:{}", self.host.addr, self.host.port),
+                    wg.server_pub.clone(),
+                    wg.client_priv.clone(),
+                )),
+            ),
+            None => (format!("{}:{}", self.host.addr, self.host.port), None),
+        };
+        let mut args = vec!["--connect".into(), dial];
+        if let Some((server, server_pub, client_key)) = wg {
+            args.push("--wg-server".into());
+            args.push(server);
+            args.push("--wg-server-pub".into());
+            args.push(server_pub);
+            args.push("--wg-client-key".into());
+            args.push(client_key);
+        }
         if let Some(fp) = &self.host.fp_hex {
             args.push("--fp".into());
             args.push(fp.clone());
