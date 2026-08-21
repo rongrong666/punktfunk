@@ -815,6 +815,10 @@ fn parse_serve(args: &[String]) -> Result<(mgmt::Options, native::NativeServe, b
     let mut open = false;
     let mut gamestream = false;
     let mut no_mdns = false;
+    // WireGuard gate mode (`--wg-key` + `--wg-peers` together; `--wg-listen` optional).
+    let mut wg_key: Option<String> = None;
+    let mut wg_peers: Option<String> = None;
+    let mut wg_listen: Option<std::net::SocketAddr> = None;
     // Did the operator pin the mgmt bind themselves? If not, we LAN-expose the read surface below so
     // paired clients can browse the game library out of the box (the bearer admin surface stays
     // loopback-gated in `mgmt::require_auth` regardless of the bind).
@@ -873,6 +877,18 @@ fn parse_serve(args: &[String]) -> Result<(mgmt::Options, native::NativeServe, b
             // Skip the mDNS adverts (native + GameStream) — multicast-dead environments
             // (bridged Docker, CI netns); clients connect via a manually-added host.
             "--no-mdns" => no_mdns = true,
+            // WireGuard gate mode: the gate owns the ONLY public UDP port; QUIC + the data
+            // plane go loopback-only and ride the tunnel (pairing/mDNS forced off downstream,
+            // the tunnel authenticates peers).
+            "--wg-key" => wg_key = Some(next()?),
+            "--wg-peers" => wg_peers = Some(next()?),
+            "--wg-listen" => {
+                wg_listen = Some(
+                    next()?
+                        .parse()
+                        .map_err(|_| anyhow::anyhow!("bad --wg-listen (want IP:PORT)"))?,
+                )
+            }
             "-h" | "--help" => {
                 print_usage();
                 std::process::exit(0);
@@ -880,6 +896,26 @@ fn parse_serve(args: &[String]) -> Result<(mgmt::Options, native::NativeServe, b
             other => bail!("unknown argument '{other}' (try --help)"),
         }
         i += 1;
+    }
+    // WireGuard gate mode (`--wg-key` + `--wg-peers` together): one public UDP port total —
+    // the gate owns it and relays authenticated tunnel traffic to the loopback QUIC endpoint +
+    // data plane. Incompatible with --gamestream (those planes need their own public ports, so
+    // combining them would silently break the one-public-port promise).
+    let wg = match (wg_key, wg_peers) {
+        (None, None) => None,
+        (Some(k), Some(p)) => Some(native::WgGate {
+            key_path: std::path::PathBuf::from(k),
+            peers_path: std::path::PathBuf::from(p),
+            listen: wg_listen,
+        }),
+        _ => bail!("--wg-key and --wg-peers must be given together"),
+    };
+    if wg.is_some() && (gamestream || pf_host_config::config().gamestream) {
+        bail!(
+            "--gamestream cannot be combined with --wg-key: WireGuard gate mode exposes a \
+             single public UDP port, but the GameStream/Moonlight planes need several public \
+             TCP/UDP ports"
+        );
     }
     // The mgmt API is HTTPS + token-authenticated ALWAYS (even on loopback). Resolve the token:
     // the --mgmt-token flag (above) wins, else PUNKTFUNK_MGMT_TOKEN env, else the persisted
@@ -916,6 +952,9 @@ fn parse_serve(args: &[String]) -> Result<(mgmt::Options, native::NativeServe, b
             Some(s) => s
                 .parse()
                 .map_err(|_| anyhow::anyhow!("bad PUNKTFUNK_MGMT_BIND '{s}' (want IP:PORT)"))?,
+            // WG gate mode exposes exactly one public port; keep the mgmt console on loopback
+            // (reachable over RDP / a port-forward) instead of LAN-exposing it.
+            None if wg.is_some() => std::net::SocketAddr::from(([127, 0, 0, 1], mgmt::DEFAULT_PORT)),
             None => std::net::SocketAddr::from(([0, 0, 0, 0], mgmt::DEFAULT_PORT)),
         };
     }
@@ -942,6 +981,7 @@ fn parse_serve(args: &[String]) -> Result<(mgmt::Options, native::NativeServe, b
         mgmt_port: opts.bind.port(),
         data_port,
         mdns: !no_mdns && discovery::mdns_enabled(),
+        wg,
     };
     // The Moonlight-compat planes are opt-in from EITHER source: the `--gamestream` CLI flag or
     // `PUNKTFUNK_GAMESTREAM` in host.env — the packaged systemd units ship a fixed native-only
@@ -1112,6 +1152,15 @@ SERVE OPTIONS:
                                  PUNKTFUNK_DATA_PORT: a random port + hole-punch (crosses NAT)
     --open                       disable mandatory native pairing (default: pairing REQUIRED —
                                  an open host any LAN device can stream from is insecure)
+    --wg-key <FILE>              WireGuard gate mode: expose ONE public UDP port (the native port,
+                                 default 9777); QUIC + the data plane bind loopback and ride the
+                                 tunnel. Pairing and mDNS are forced OFF (the tunnel authenticates
+                                 peers), --gamestream is refused, and the mgmt console binds
+                                 loopback unless --mgmt-bind says otherwise. Requires --wg-peers.
+                                 Generate keys with `pf-wgtunnel genkey`
+    --wg-peers <FILE>            allowed client public keys, one base64 key per line
+    --wg-listen <IP:PORT>        gate public listen address (default 0.0.0.0:<native-port>) — set
+                                 when a router/NAT maps a different external port
     --no-mdns                    skip the mDNS adverts (native + GameStream) — for multicast-dead
                                  environments (bridged Docker, CI); clients connect via a manually
                                  added host. Also PUNKTFUNK_MDNS=0

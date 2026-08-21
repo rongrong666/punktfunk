@@ -9,7 +9,10 @@
 //!
 //!   pf-wgtunnel client --key FILE --server-pub B64 --server HOST:PORT
 //!                      [--listen-quic 127.0.0.1:9777] [--listen-data 127.0.0.1:9778]
+//!                      [--quic-target-port N] [--data-target-port N]
 //!       Client relay: exposes loopback endpoints for the punktfunk client.
+//!       The target ports are the host-side service ports written into the
+//!       tunnel packets; they default to the listen ports.
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;
@@ -27,7 +30,8 @@ fn usage() -> ! {
          \x20 pf-wgtunnel server --key FILE --peers FILE [--listen 0.0.0.0:9777]\n\
          \x20                    [--quic 127.0.0.1:9777] [--data 127.0.0.1:9778]\n\
          \x20 pf-wgtunnel client --key FILE --server-pub B64 --server HOST:PORT\n\
-         \x20                    [--listen-quic 127.0.0.1:9777] [--listen-data 127.0.0.1:9778]"
+         \x20                    [--listen-quic 127.0.0.1:9777] [--listen-data 127.0.0.1:9778]\n\
+         \x20                    [--quic-target-port N] [--data-target-port N]"
     );
     std::process::exit(2)
 }
@@ -115,6 +119,18 @@ fn run() -> Result<(), String> {
                 .map_err(|e| format!("--server: invalid address: {e}"))?;
             let listen_quic = args.take_addr("--listen-quic", "127.0.0.1:9777")?;
             let listen_data = args.take_addr("--listen-data", "127.0.0.1:9778")?;
+            let quic_target_port = args
+                .take("--quic-target-port")
+                .map(|s| s.parse::<u16>())
+                .transpose()
+                .map_err(|e| format!("--quic-target-port: {e}"))?
+                .unwrap_or_else(|| listen_quic.port());
+            let data_target_port = args
+                .take("--data-target-port")
+                .map(|s| s.parse::<u16>())
+                .transpose()
+                .map_err(|e| format!("--data-target-port: {e}"))?
+                .unwrap_or_else(|| listen_data.port());
             args.finish()?;
             let private_key = keys::load_private_key(&key)
                 .map_err(|e| format!("load {}: {e}", key.display()))?;
@@ -126,6 +142,8 @@ fn run() -> Result<(), String> {
                 server_public,
                 listen_quic,
                 listen_data,
+                quic_target_port,
+                data_target_port,
             })
             .map_err(|e| format!("client: {e}"))
         }

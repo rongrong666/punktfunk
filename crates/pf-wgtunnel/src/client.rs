@@ -38,6 +38,12 @@ pub struct ClientConfig {
     pub listen_quic: SocketAddr,
     /// Loopback listener for the video data plane.
     pub listen_data: SocketAddr,
+    /// Service port the host gate expects for QUIC inner packets
+    /// (defaults to `listen_quic.port()`; override when the local listener
+    /// cannot use the same port number as the server's QUIC endpoint).
+    pub quic_target_port: u16,
+    /// Same for the video data plane (defaults to `listen_data.port()`).
+    pub data_target_port: u16,
 }
 
 struct Shared {
@@ -47,8 +53,11 @@ struct Shared {
     flows: Mutex<HashMap<(u8, u16), SocketAddr>>,
     quic_sock: UdpSocket,
     data_sock: UdpSocket,
-    quic_port: u16,
-    data_port: u16,
+    /// Host-side service ports: written as the inner destination port and
+    /// matched against the reply's inner source port. May differ from the
+    /// local listen ports (see `ClientConfig::quic_target_port`).
+    quic_svc: u16,
+    data_svc: u16,
 }
 
 fn send_wg(shared: &Shared, pkt: &[u8]) -> io::Result<()> {
@@ -92,9 +101,9 @@ fn deliver_inner(shared: &Shared, inner_bytes: &[u8]) {
     let Some(inner) = ippkt::parse_udp(inner_bytes) else {
         return;
     };
-    let (kind, sock) = if inner.src_port == shared.quic_port {
+    let (kind, sock) = if inner.src_port == shared.quic_svc {
         (KIND_QUIC, &shared.quic_sock)
-    } else if inner.src_port == shared.data_port {
+    } else if inner.src_port == shared.data_svc {
         (KIND_DATA, &shared.data_sock)
     } else {
         return;
@@ -161,8 +170,8 @@ pub fn run_client(cfg: ClientConfig) -> io::Result<()> {
         tunn: *tunn,
         wg,
         flows: Mutex::new(HashMap::new()),
-        quic_port: cfg.listen_quic.port(),
-        data_port: cfg.listen_data.port(),
+        quic_svc: cfg.quic_target_port,
+        data_svc: cfg.data_target_port,
         quic_sock,
         data_sock,
     });
@@ -182,10 +191,10 @@ pub fn run_client(cfg: ClientConfig) -> io::Result<()> {
     let s1 = Arc::clone(&shared);
     thread::spawn(move || wg_reader(s1));
     let s2 = Arc::clone(&shared);
-    let qp = shared.quic_port;
+    let qp = shared.quic_svc;
     thread::spawn(move || local_reader(s2, KIND_QUIC, qp));
     let s3 = Arc::clone(&shared);
-    let dp = shared.data_port;
+    let dp = shared.data_svc;
     thread::spawn(move || local_reader(s3, KIND_DATA, dp));
 
     // Timer thread: handshake retransmits, keepalives, session rotation.

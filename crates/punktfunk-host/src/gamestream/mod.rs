@@ -473,6 +473,9 @@ pub fn serve(
         // rustls needs a process-wide crypto provider before any TLS config is built.
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let native_opts = crate::native::native_serve_opts(&native);
+        // WireGuard gate mode (`serve --wg-key/--wg-peers`): the gate must own the public UDP
+        // socket BEFORE any plane binds — QUIC + the data plane are loopback-only inside it.
+        crate::native::spawn_wg_gate(&native_opts)?;
         // The hook runner consumes the live event tail for the host's lifetime — spawned BEFORE
         // `host.started` is emitted so operator hooks observe the full lifecycle (RFC §6).
         tokio::spawn(crate::hooks::runner());

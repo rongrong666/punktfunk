@@ -155,6 +155,7 @@ pub struct Punktfunk1Options {
 }
 
 /// WireGuard gate configuration for [`Punktfunk1Options::wg`].
+#[derive(Clone)]
 pub struct WgGate {
     /// File with the host's base64 x25519 private key.
     pub key_path: std::path::PathBuf,
@@ -171,6 +172,42 @@ pub struct WgGate {
 /// the client machine's loopback. Fixed because the client-side relay cannot pre-bind an arbitrary
 /// per-session port.
 pub const WG_DATA_PORT: u16 = 9778;
+
+/// WireGuard gate mode: spawn the gate BEFORE serving — it owns the only public UDP socket
+/// and relays authenticated tunnel traffic to the loopback QUIC endpoint + data plane.
+/// Shared by the standalone `punktfunk1-host` ([`run`]) and the unified `serve` path.
+pub(crate) fn spawn_wg_gate(opts: &Punktfunk1Options) -> anyhow::Result<()> {
+    let Some(wg) = &opts.wg else { return Ok(()) };
+    let private_key = pf_wgtunnel::keys::load_private_key(&wg.key_path)
+        .with_context(|| format!("WireGuard host key {}", wg.key_path.display()))?;
+    let peers = pf_wgtunnel::keys::load_peers(&wg.peers_path)
+        .with_context(|| format!("WireGuard peers {}", wg.peers_path.display()))?;
+    let peer_count = peers.len();
+    let gate = pf_wgtunnel::server::ServerConfig {
+        listen: wg
+            .listen
+            .unwrap_or(std::net::SocketAddr::from(([0, 0, 0, 0], opts.port))),
+        private_key,
+        peers,
+        quic_target: std::net::SocketAddr::from(([127, 0, 0, 1], opts.port)),
+        data_target: std::net::SocketAddr::from(([127, 0, 0, 1], WG_DATA_PORT)),
+    };
+    std::thread::Builder::new()
+        .name("wg-gate".into())
+        .spawn(move || {
+            if let Err(e) = pf_wgtunnel::server::run_server(gate) {
+                tracing::error!(error = %e, "WireGuard gate died");
+            }
+        })
+        .context("spawn WireGuard gate thread")?;
+    tracing::info!(
+        port = opts.port,
+        data_port = WG_DATA_PORT,
+        peers = peer_count,
+        "WireGuard gate mode: one public UDP port; QUIC + data plane are loopback-only"
+    );
+    Ok(())
+}
 
 /// Bind the per-session data-plane UDP socket, honoring [`Punktfunk1Options::data_port`]. Returns
 /// `(socket, direct)`: `direct = true` (a successfully-bound fixed port) means "stream straight to
@@ -259,38 +296,7 @@ pub fn run(opts: Punktfunk1Options) -> Result<()> {
     // Standalone runs resolve the native identity themselves (the unified `serve` resolves it
     // once for both planes — see `crate::identity::load_or_adopt`'s once-per-process note).
     let ident = crate::identity::load_or_adopt(&np).context("native host identity")?;
-    // WireGuard gate mode: spawn the gate BEFORE serving — it owns the only public UDP socket
-    // and relays authenticated tunnel traffic to the loopback QUIC endpoint + data plane.
-    if let Some(wg) = &opts.wg {
-        let private_key = pf_wgtunnel::keys::load_private_key(&wg.key_path)
-            .with_context(|| format!("WireGuard host key {}", wg.key_path.display()))?;
-        let peers = pf_wgtunnel::keys::load_peers(&wg.peers_path)
-            .with_context(|| format!("WireGuard peers {}", wg.peers_path.display()))?;
-        let peer_count = peers.len();
-        let gate = pf_wgtunnel::server::ServerConfig {
-            listen: wg
-                .listen
-                .unwrap_or(std::net::SocketAddr::from(([0, 0, 0, 0], opts.port))),
-            private_key,
-            peers,
-            quic_target: std::net::SocketAddr::from(([127, 0, 0, 1], opts.port)),
-            data_target: std::net::SocketAddr::from(([127, 0, 0, 1], WG_DATA_PORT)),
-        };
-        std::thread::Builder::new()
-            .name("wg-gate".into())
-            .spawn(move || {
-                if let Err(e) = pf_wgtunnel::server::run_server(gate) {
-                    tracing::error!(error = %e, "WireGuard gate died");
-                }
-            })
-            .context("spawn WireGuard gate thread")?;
-        tracing::info!(
-            port = opts.port,
-            data_port = WG_DATA_PORT,
-            peers = peer_count,
-            "WireGuard gate mode: one public UDP port; QUIC + data plane are loopback-only"
-        );
-    }
+    spawn_wg_gate(&opts)?;
     // Standalone `punktfunk1-host` runs no management API, so advertise no `mgmt` port (0).
     rt.block_on(serve(opts, 0, np, stats, ident))
 }
@@ -341,6 +347,10 @@ pub(crate) struct NativeServe {
     /// `_punktfunk._udp` advert AND the GameStream `_nvstream` advert — the serve-level knob for
     /// multicast-dead environments; see [`Punktfunk1Options::mdns`].
     pub mdns: bool,
+    /// WireGuard gate mode (`serve --wg-key ... --wg-peers ...`): one public UDP port, QUIC +
+    /// data plane loopback-only inside the tunnel. Forces pairing off (the tunnel authenticates
+    /// peers), mDNS off (nothing publicly discoverable), and pins the fixed inner data port.
+    pub wg: Option<WgGate>,
 }
 
 /// Options for the native host when the unified `serve --native` runs it: real virtual capture,
@@ -363,6 +373,7 @@ pub(crate) fn idle_timeout_from_env() -> Option<std::time::Duration> {
 }
 
 pub(crate) fn native_serve_opts(cfg: &NativeServe) -> Punktfunk1Options {
+    let wg_mode = cfg.wg.is_some();
     Punktfunk1Options {
         port: cfg.port,
         source: Punktfunk1Source::Virtual,
@@ -370,14 +381,19 @@ pub(crate) fn native_serve_opts(cfg: &NativeServe) -> Punktfunk1Options {
         frames: 0,
         max_sessions: 0,
         max_concurrent: DEFAULT_MAX_CONCURRENT,
-        require_pairing: cfg.require_pairing,
+        // WireGuard gate mode authenticates at the tunnel, so pairing is forced off there
+        // (same rule as the standalone `punktfunk1-host` CLI).
+        require_pairing: cfg.require_pairing && !wg_mode,
         allow_pairing: false,
         pairing_pin: None,
         paired_store: None,
-        data_port: cfg.data_port,
+        // WG mode pins the fixed INNER data port on loopback (hole-punch semantics kept —
+        // see handshake.rs); the gate relays tunnel traffic to it.
+        data_port: if wg_mode { Some(WG_DATA_PORT) } else { cfg.data_port },
         idle_timeout: idle_timeout_from_env(),
-        mdns: cfg.mdns,
-        wg: None,
+        // Nothing publicly discoverable in WG mode — the QUIC endpoint is loopback-only.
+        mdns: cfg.mdns && !wg_mode,
+        wg: cfg.wg.clone(),
     }
 }
 
