@@ -293,7 +293,8 @@ impl DeepLink {
                 .id
                 .clone()
                 .unwrap_or_else(|| format!("{}:{}", host.addr, host.port)),
-            fp: (!host.fp_hex.is_empty()).then(|| host.fp_hex.clone()),
+            fp: (!host.fp_hex.is_empty() && !crate::trust::is_pending_fp(&host.fp_hex))
+                .then(|| host.fp_hex.clone()),
             host: Some((host.addr.clone(), host.port)),
             launch: launch.map(str::to_string),
             profile: profile.map(str::to_string),
@@ -304,7 +305,7 @@ impl DeepLink {
     /// True when this link's `fp` contradicts what we have pinned for that host — the link is
     /// stale or lying, and the only safe answer is a hard refusal (§3.1).
     pub fn pin_conflict(&self, host: &KnownHost) -> bool {
-        match (&self.fp, host.fp_hex.is_empty()) {
+        match (&self.fp, host.fp_hex.is_empty() || crate::trust::is_pending_fp(&host.fp_hex)) {
             (Some(fp), false) => !fp.eq_ignore_ascii_case(&host.fp_hex),
             _ => false,
         }

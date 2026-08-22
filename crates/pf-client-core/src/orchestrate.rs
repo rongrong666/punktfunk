@@ -55,7 +55,9 @@ impl From<&KnownHost> for HostTarget {
             name: h.name.clone(),
             addr: h.addr.clone(),
             port: h.port,
-            fp_hex: (!h.fp_hex.is_empty()).then(|| h.fp_hex.clone()),
+            // A pending placeholder is not a pin: never carried into a connect plan.
+            fp_hex: (!h.fp_hex.is_empty() && !crate::trust::is_pending_fp(&h.fp_hex))
+                .then(|| h.fp_hex.clone()),
             mac: h.mac.clone(),
             id: h.id.clone(),
             mgmt_port: h.mgmt_port,
@@ -222,25 +224,35 @@ impl ConnectPlan {
     pub fn session_args(&self) -> Vec<String> {
         // WireGuard mode: the session dials its embedded relay on loopback; the real public
         // endpoint rides the --wg-* flags so the relay knows where to send tunnel traffic.
+        // The relay's loopback pair is picked per spawn from the first free candidate, so
+        // several WG sessions can run side by side (screen wall) instead of fighting over
+        // 9777/9778 — the chosen pair rides --wg-relay-listen into the child.
         let (dial, wg) = match &self.host.wg {
-            Some(wg) => (
-                "127.0.0.1:9777".to_string(),
-                Some((
-                    format!("{}:{}", self.host.addr, self.host.port),
-                    wg.server_pub.clone(),
-                    wg.client_priv.clone(),
-                )),
-            ),
+            Some(wg) => {
+                let (lq, ld) = free_relay_ports();
+                (
+                    format!("127.0.0.1:{lq}"),
+                    Some((
+                        format!("{}:{}", self.host.addr, self.host.port),
+                        wg.server_pub.clone(),
+                        wg.client_priv.clone(),
+                        lq,
+                        ld,
+                    )),
+                )
+            }
             None => (format!("{}:{}", self.host.addr, self.host.port), None),
         };
         let mut args = vec!["--connect".into(), dial];
-        if let Some((server, server_pub, client_key)) = wg {
+        if let Some((server, server_pub, client_key, lq, ld)) = wg {
             args.push("--wg-server".into());
             args.push(server);
             args.push("--wg-server-pub".into());
             args.push(server_pub);
             args.push("--wg-client-key".into());
             args.push(client_key);
+            args.push("--wg-relay-listen".into());
+            args.push(format!("{lq}:{ld}"));
         }
         if let Some(fp) = &self.host.fp_hex {
             args.push("--fp".into());
@@ -597,6 +609,36 @@ impl ResolvedSpec {
     }
 }
 
+/// The first loopback (QUIC, data) pair whose UDP sockets are both free right now. A WG
+/// session's embedded relay binds these, so concurrent sessions each need their own pair;
+/// the default pair comes first, keeping a single session byte-identical to before. There
+/// is an inherent bind-race between this probe and the child's own bind — on loopback it
+/// is theoretical (only another punktfunk spawn in the same millisecond could steal it),
+/// and the child's error message names the port if it ever loses.
+fn free_relay_ports() -> (u16, u16) {
+    const CANDIDATES: [(u16, u16); 5] = [
+        (9777, 9778),
+        (19777, 19778),
+        (29777, 29778),
+        (39777, 39778),
+        (49777, 49778),
+    ];
+    for (q, d) in CANDIDATES {
+        let free = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, q))
+            .and_then(|a| {
+                std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, d)).map(|b| drop((a, b)))
+            })
+            .is_ok();
+        if free {
+            return (q, d);
+        }
+    }
+    // All five pairs busy (five WG streams already up): let the child bind the default
+    // pair and fail with a clear "address in use" naming 9777, rather than inventing a
+    // sixth range silently.
+    CANDIDATES[0]
+}
+
 /// One event from the session child's stdout contract (`{"ready":true}`, `{"error":…}`,
 /// `{"ended":…}`, then EOF and an exit code). Parsed in one place so a shell, the console and
 /// the CLI cannot disagree about what "ready" or "trust rejected" means.
@@ -794,6 +836,17 @@ pub fn exec_session(plan: &ConnectPlan) -> std::io::Error {
 mod tests {
     use super::*;
     use crate::deeplink;
+
+    /// Screen-wall support: with the default pair taken, the next spawn must move on to
+    /// the next candidate pair instead of colliding on 9777/9778.
+    #[test]
+    fn free_relay_ports_skips_a_busy_default_pair() {
+        let hold = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 9777)).unwrap();
+        let (q, d) = free_relay_ports();
+        assert_eq!((q, d), (19777, 19778));
+        drop(hold);
+        assert_eq!(free_relay_ports(), (9777, 9778));
+    }
 
     fn host(name: &str, addr: &str, id: &str, fp: &str) -> KnownHost {
         KnownHost {

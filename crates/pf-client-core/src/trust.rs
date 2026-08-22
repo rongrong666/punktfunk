@@ -686,7 +686,7 @@ pub fn forget_placeholder(addr: &str, port: u16) {
     let before = known.hosts.len();
     known
         .hosts
-        .retain(|h| !(h.fp_hex.is_empty() && h.addr == addr && h.port == port));
+        .retain(|h| !((h.fp_hex.is_empty() || is_pending_fp(&h.fp_hex)) && h.addr == addr && h.port == port));
     if known.hosts.len() != before {
         let _ = known.save();
     }
@@ -822,6 +822,62 @@ pub fn learn_mgmt_port_by_fp(fp_hex: &str, mgmt_port: u16) {
     let _ = known.save();
 }
 
+/// Placeholder fingerprint prefix for a host saved BEFORE any connect — the WG-mode
+/// "add host" flow writes the record (with its tunnel keys) before the TLS fingerprint
+/// can be learned, and the shell keys every host row by `fp_hex`. An EMPTY fp for more
+/// than one such host collapses them into one row (edit/forget/menus all hit the first
+/// match), so each gets a unique `pending-…` id instead. A pending fp behaves like an
+/// empty one everywhere trust is concerned (it never parses as hex32 and is never sent
+/// as `--fp`); [`learn_fp_by_addr`] overwrites it with the real fingerprint on the first
+/// successful connect.
+pub const PENDING_FP_PREFIX: &str = "pending-";
+
+/// True for a placeholder minted at add time — see [`PENDING_FP_PREFIX`].
+pub fn is_pending_fp(fp_hex: &str) -> bool {
+    fp_hex.starts_with(PENDING_FP_PREFIX)
+}
+
+/// Mint a unique placeholder fingerprint from an add-time seed (addr/port/keys).
+pub fn mint_pending_fp(seed: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    seed.hash(&mut h);
+    format!("{PENDING_FP_PREFIX}{:016x}", h.finish())
+}
+
+/// Repair stores written before pending ids existed: every record still carrying an
+/// EMPTY (or duplicated) fp gets a unique pending id, so host rows are addressable
+/// again. Returns true when it changed anything (the caller then saves).
+pub fn repair_pending_fps(known: &mut KnownHosts) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let mut changed = false;
+    for h in known.hosts.iter_mut() {
+        if !h.fp_hex.is_empty() && !is_pending_fp(&h.fp_hex) {
+            seen.insert(h.fp_hex.clone());
+            continue;
+        }
+        if !h.fp_hex.is_empty() && seen.insert(h.fp_hex.clone()) {
+            continue; // a unique pending id is already fine
+        }
+        let seed = format!(
+            "{}:{}:{}",
+            h.addr,
+            h.port,
+            h.wg.as_ref().map(|w| w.client_priv.as_str()).unwrap_or("")
+        );
+        let mut fp = mint_pending_fp(&seed);
+        let mut n = 0u32;
+        while seen.contains(&fp) {
+            n += 1;
+            fp = mint_pending_fp(&format!("{seed}#{n}"));
+        }
+        seen.insert(fp.clone());
+        h.fp_hex = fp;
+        changed = true;
+    }
+    changed
+}
+
 /// Learn a host's certificate fingerprint after a WireGuard-mode first connect, keyed by the
 /// saved record's addr:port: the WG static key authenticated the host at the tunnel layer, so
 /// the cert pin the session just observed is safe to persist (and is enforced from then on).
@@ -838,7 +894,8 @@ pub fn learn_fp_by_addr(addr: &str, port: u16, fp_hex: &str) {
     else {
         return;
     };
-    if !h.fp_hex.is_empty() {
+    // A pending placeholder is not a pin: overwrite it with the learned fingerprint.
+    if !h.fp_hex.is_empty() && !is_pending_fp(&h.fp_hex) {
         return;
     }
     h.fp_hex = fp_hex.to_string();
@@ -1695,6 +1752,34 @@ mod tests {
         std::iter::repeat_n(c, 64).collect()
     }
 
+    /// WG add-before-connect stored every such host with an EMPTY fp, and host rows are
+    /// keyed by fp — two never-connected hosts became one row (edit/forget hit the first).
+    /// The repair must give each a unique pending id and leave real pins untouched.
+    #[test]
+    fn repair_pending_fps_uniques_empty_and_duplicate_fps() {
+        let mut known = KnownHosts::default();
+        let host = |addr: &str, port: u16, fp_hex: &str| KnownHost {
+            name: addr.to_string(),
+            addr: addr.to_string(),
+            port,
+            fp_hex: fp_hex.to_string(),
+            ..Default::default()
+        };
+        known.hosts.push(host("10.0.0.1", 9777, ""));
+        known.hosts.push(host("10.0.0.2", 9777, ""));
+        known.hosts.push(host("10.0.0.3", 9777, &fp('a')));
+        assert!(repair_pending_fps(&mut known));
+        let fps: Vec<String> = known.hosts.iter().map(|h| h.fp_hex.clone()).collect();
+        assert!(fps.iter().all(|f| !f.is_empty()));
+        assert!(is_pending_fp(&fps[0]) && is_pending_fp(&fps[1]));
+        assert_ne!(fps[0], fps[1]);
+        assert_eq!(fps[2], fp('a'));
+        // Idempotent: a second pass changes nothing.
+        assert!(!repair_pending_fps(&mut known));
+        // Pending fps are never real pins.
+        assert!(parse_hex32(&fps[0]).is_none());
+    }
+
     /// **A byte order mark must not silently erase every setting in the file.**
     ///
     /// PowerShell's `Set-Content -Encoding UTF8` writes one, so this is what a settings
@@ -2005,6 +2090,7 @@ mod tests {
                 profile_id: Some("aaaaaaaaaaaa".into()),
                 pinned_profiles: vec!["bbbbbbbbbbbb".into()],
                 id: Some("11111111-2222-4333-8444-555555555555".into()),
+                wg: None,
             }],
         };
         // What `persist_host` builds: a trust decision, nothing else.
@@ -2113,6 +2199,7 @@ mod tests {
                 profile_id: Some("aaaaaaaaaaaa".into()),
                 pinned_profiles: vec!["bbbbbbbbbbbb".into()],
                 id: Some("11111111-2222-4333-8444-555555555555".into()),
+                wg: None,
             }],
         };
         // The re-pair: same box, same address, a certificate the client has never seen.

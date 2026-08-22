@@ -8,5 +8,6 @@
 //! still load via a serde alias in core.
 
 pub use pf_client_core::trust::{
-    hex, load_or_create_identity, parse_hex32, KnownHost, KnownHosts, Settings, WgPeer,
+    hex, is_pending_fp, load_or_create_identity, mint_pending_fp, parse_hex32,
+    repair_pending_fps, KnownHost, KnownHosts, Settings, WgPeer,
 };

@@ -26,8 +26,11 @@ mod console;
 mod ring_layer;
 
 /// Loopback ports the in-process WireGuard relay listens on in WG mode (the session then
-/// dials these instead of the real host). Fixed, not configurable: the shell and the
-/// session agree on them implicitly through the `--wg-*` flags.
+/// dials these instead of the real host). The spawner picks a free pair per session (so a
+/// client can hold SEVERAL WG streams at once — the screen-wall case) and hands them over
+/// with `--wg-relay-listen QUIC:DATA`; these constants are just the default first pair.
+/// The TARGET ports written into tunnel packets stay 9777/9778 regardless: those are the
+/// host-side service ports the gate dispatches on, not anything local.
 const WG_LOCAL_QUIC_PORT: u16 = 9777;
 const WG_LOCAL_DATA_PORT: u16 = 9778;
 
@@ -997,6 +1000,24 @@ mod session_main {
         let wg = match wg_args {
             (None, None, None) => None,
             (Some(server), Some(server_pub), Some(client_key)) => {
+                // Per-session loopback pair from the spawner (multi-WG-session support);
+                // default pair keeps single-session behaviour byte-identical.
+                let (lq, ld) = match arg_value("--wg-relay-listen") {
+                    Some(v) => match v.split_once(':') {
+                        Some((q, d)) => match (q.parse::<u16>(), d.parse::<u16>()) {
+                            (Ok(q), Ok(d)) => (q, d),
+                            _ => {
+                                json_line("error", "wg: --wg-relay-listen wants QUIC:DATA ports", None);
+                                return EXIT_CONNECT_FAILED;
+                            }
+                        },
+                        None => {
+                            json_line("error", "wg: --wg-relay-listen wants QUIC:DATA ports", None);
+                            return EXIT_CONNECT_FAILED;
+                        }
+                    },
+                    None => (WG_LOCAL_QUIC_PORT, WG_LOCAL_DATA_PORT),
+                };
                 let (saddr, sport) = parse_host_port(&server);
                 let server_addr = match format!("{saddr}:{sport}").parse::<std::net::SocketAddr>()
                 {
@@ -1032,8 +1053,12 @@ mod session_main {
                             return EXIT_CONNECT_FAILED;
                         }
                     },
-                    listen_quic: ([127, 0, 0, 1], WG_LOCAL_QUIC_PORT).into(),
-                    listen_data: ([127, 0, 0, 1], WG_LOCAL_DATA_PORT).into(),
+                    listen_quic: ([127, 0, 0, 1], lq).into(),
+                    listen_data: ([127, 0, 0, 1], ld).into(),
+                    // The host-side service ports the gate dispatches on — always the
+                    // standard pair, independent of which local ports this session got.
+                    quic_target_port: WG_LOCAL_QUIC_PORT,
+                    data_target_port: WG_LOCAL_DATA_PORT,
                 };
                 std::thread::Builder::new()
                     .name("wg-relay".into())
@@ -1043,7 +1068,7 @@ mod session_main {
                         }
                     })
                     .ok();
-                Some(())
+                Some(lq)
             }
             _ => {
                 json_line(
@@ -1054,8 +1079,8 @@ mod session_main {
                 return EXIT_CONNECT_FAILED;
             }
         };
-        let (dial_addr, dial_port) = if wg.is_some() {
-            ("127.0.0.1".to_string(), WG_LOCAL_QUIC_PORT)
+        let (dial_addr, dial_port) = if let Some(lq) = wg {
+            ("127.0.0.1".to_string(), lq)
         } else {
             (addr.clone(), port)
         };

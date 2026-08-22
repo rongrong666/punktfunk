@@ -7,7 +7,7 @@ use super::connect::{initiate, initiate_waking};
 use super::speed::SpeedState;
 use super::style::*;
 use super::{Screen, Svc, Target};
-use crate::trust::{KnownHost, KnownHosts, WgPeer};
+use crate::trust::{mint_pending_fp, KnownHost, KnownHosts, WgPeer};
 use std::collections::HashMap;
 use windows_reactor::*;
 
@@ -560,7 +560,13 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
         current: props.hover.clone(),
         set: props.set_hover.clone(),
     };
-    let known = KnownHosts::load();
+    let mut known = KnownHosts::load();
+    // Stores written before pending-fp ids existed hold several WG hosts with an EMPTY
+    // fingerprint — and every host row is keyed by fp, so they were one and the same row
+    // (the edit sheet showed the first one's values for all of them). Repair in place.
+    if crate::trust::repair_pending_fps(&mut known) {
+        let _ = known.save();
+    }
 
     // Responsive column count from the live window width (re-renders on resize): as many
     // TILE_MIN_WIDTH columns as fit the page's content width, at least one.
@@ -1046,6 +1052,12 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 // Persist the WG keys on this host's record (updating it in place when the
                 // address is already saved), so the next connect needs no dialog at all.
                 let mut known = KnownHosts::load();
+                // Repair stores written before pending ids existed: any host still on an
+                // empty fp gets a unique one FIRST, or the addr-match below and every
+                // fp-keyed menu (edit/forget/…) collapses all such hosts into one row.
+                if crate::trust::repair_pending_fps(&mut known) {
+                    let _ = known.save();
+                }
                 if let Some(h) = known
                     .hosts
                     .iter_mut()
@@ -1053,10 +1065,15 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                 {
                     h.wg = Some(peer);
                 } else {
+                    // A saved-before-connect host still needs a unique row key: mint a
+                    // pending fp (learn_fp_by_addr swaps in the real one on first connect).
+                    let pending =
+                        mint_pending_fp(&format!("{addr}:{port}:{}", peer.client_priv));
                     known.hosts.push(KnownHost {
                         name: addr.clone(),
                         addr: addr.clone(),
                         port,
+                        fp_hex: pending,
                         wg: Some(peer),
                         ..Default::default()
                     });
