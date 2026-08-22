@@ -180,6 +180,16 @@ mod session_main {
         Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
     }
 
+    /// `--window-size W,H` → the window's starting size, overriding the match-window
+    /// persisted size (the screen-wall spawner tiles every session at a grid cell it
+    /// computed; the persisted last size belongs to single-session launches). Absent or
+    /// unparsable = fall through to [`window_size`].
+    pub(crate) fn window_size_arg() -> Option<(u32, u32)> {
+        let v = arg_value("--window-size")?;
+        let (w, h) = v.split_once(',')?;
+        Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+    }
+
     /// `--pair <PIN> --connect host[:port]` — the SPAKE2 PIN ceremony with no window, no GTK
     /// and no console UI, so a machine that has only SSH can be enrolled: an embedded/kiosk
     /// client, a headless box, an image being provisioned. Writes the verified host into the
@@ -1199,7 +1209,7 @@ mod session_main {
             overlay: Some(Box::new(pf_console_ui::SkiaOverlay::new())),
             #[cfg(not(feature = "ui"))]
             overlay: None,
-            window_size: window_size(&settings),
+            window_size: window_size_arg().or_else(|| window_size(&settings)),
             // A spawned session (spec mode) reports its window; a hand-run one persists it.
             match_window: match_window(&settings, spec.is_none()),
             render_scale: settings.render_scale,

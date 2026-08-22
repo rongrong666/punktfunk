@@ -228,7 +228,8 @@ fn add_window_pos(cmd: &mut Command) {
 
 /// The shared spawn + stdout-contract reader behind [`spawn_session`]/[`spawn_browse`].
 /// `spec_path` is the child's `--resolved-spec` temp file, deleted once the child exits.
-fn spawn_with(
+/// `pub(crate)`: the screen wall spawns its batch through the same plumbing.
+pub(crate) fn spawn_with(
     mut cmd: Command,
     host_label: &str,
     spec_path: Option<std::path::PathBuf>,

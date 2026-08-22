@@ -50,6 +50,7 @@ mod settings;
 mod speed;
 mod stream;
 mod style;
+mod wall;
 
 use crate::trust::{KnownHosts, Settings};
 use hosts::HostsProps;
@@ -81,6 +82,9 @@ pub(crate) enum Screen {
     Help,
     /// Per-host network speed test (probe burst + recommended bitrate).
     SpeedTest,
+    /// The screen wall: every connectable host streaming at once, each in its own tiled
+    /// session window; this screen is the wall's control surface (per-tile status + stop-all).
+    Wall,
 }
 
 /// The host we're about to connect to / pair with / speed-test (carried into those screens
@@ -163,6 +167,11 @@ pub(crate) struct Shared {
     /// Whether the live session child is a `--browse` console-UI run (vs a stream) — the
     /// session status page words itself accordingly. Set by each spawn.
     pub(crate) browse: std::sync::atomic::AtomicBool,
+    /// The screen wall's tiles (one per spawned session) — separate from `session` above,
+    /// which stays the single-stream slot. Reader threads update tile status off the UI
+    /// thread; `wall_rev` is what they bump to get the page re-rendered.
+    pub(crate) wall: Mutex<Vec<Arc<wall::WallTile>>>,
+    pub(crate) wall_rev: std::sync::atomic::AtomicU64,
 }
 
 pub struct AppCtx {
@@ -306,6 +315,9 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
     // known-hosts store behind the tiles, and the bump is what makes the pinned tile appear
     // in the same gesture instead of on the next discovery tick.
     let (hosts_rev, set_hosts_rev) = cx.use_async_state(0u64);
+    // Screen-wall re-render trigger: tile reader threads bump `Shared::wall_rev` and
+    // publish the new number here (they can't read-modify-write an async state).
+    let (wall_rev, set_wall_rev) = cx.use_async_state(0u64);
     // `punktfunk://` links: the receiver thread queues them (from this launch's argv, or from a
     // later instance over WM_COPYDATA) and this poll pulls them onto the UI thread. Thread-fed
     // state must be root state, like the pad count below.
@@ -616,6 +628,7 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
                 set_show_add,
                 set_hover,
                 set_hosts_rev: set_hosts_rev.clone(),
+                set_wall_rev: set_wall_rev.clone(),
             },
         ),
         // connecting_page / request_access_page / waking_page / settings_page / licenses_page /
@@ -641,6 +654,9 @@ fn root(cx: &mut RenderCx, ctx: &Arc<AppCtx>) -> Element {
         Screen::Licenses => licenses::licenses_page(ctx, &set_screen),
         Screen::Help => help::help_page(&set_screen),
         Screen::SpeedTest => component(speed::speed_page, SpeedProps { svc, state: speed }),
+        // The wall's sessions own their tiled windows; this page is status + stop-all
+        // (no hooks — inline is sound, like the other status pages).
+        Screen::Wall => wall::wall_page(ctx, wall_rev, &set_screen, &set_wall_rev),
         // The stream runs in the punktfunk-session child's own window; this screen is a
         // status page (no hooks — inline is sound).
         Screen::Stream => stream::session_page(ctx, &hud),

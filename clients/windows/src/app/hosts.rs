@@ -76,6 +76,9 @@ pub(crate) struct HostsProps {
     pub(crate) set_show_add: AsyncSetState<bool>,
     pub(crate) set_hover: AsyncSetState<Option<String>>,
     pub(crate) set_hosts_rev: AsyncSetState<u64>,
+    /// Root re-render trigger for the screen wall's tile status — the wall button hands it
+    /// to `wall::start_wall`, whose reader threads bump it.
+    pub(crate) set_wall_rev: AsyncSetState<u64>,
 }
 
 impl PartialEq for HostsProps {
@@ -601,6 +604,27 @@ pub(crate) fn hosts_page(props: &HostsProps, cx: &mut RenderCx) -> Element {
                         move || sa.call(true)
                     })
                     .into()];
+                actions.push(
+                    icon_btn("屏幕墙", Symbol::FullScreen)
+                        .on_click({
+                            let (c, ss, st, swr) = (
+                                ctx.clone(),
+                                set_screen.clone(),
+                                set_status.clone(),
+                                props.set_wall_rev.clone(),
+                            );
+                            move || {
+                                // A live wall routes to its control page instead of
+                                // spawning a second batch on top of the first.
+                                if c.shared.wall.lock().unwrap().is_empty() {
+                                    super::wall::start_wall(&c, &ss, &st, &swr);
+                                } else {
+                                    ss.call(Screen::Wall);
+                                }
+                            }
+                        })
+                        .into(),
+                );
                 actions.push(
                     icon_btn("键盘快捷键", Symbol::Keyboard)
                         .on_click({

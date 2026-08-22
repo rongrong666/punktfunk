@@ -97,6 +97,11 @@ pub struct ConnectPlan {
     /// lives on the record rather than in a profile, and the spawner resolves it once here
     /// instead of the renderer looking it up again.
     pub clipboard: bool,
+    /// Explicit WG relay loopback pair for this launch: a batch spawner (the screen wall)
+    /// allocates one pair per tile up front via [`alloc_relay_pair`], closing the bind-race
+    /// between the probe in `free_relay_ports` and each child's own bind. `None` = probe at
+    /// args-build time (fine for a single spawn). Ignored for non-WG targets.
+    pub wg_relay_ports: Option<(u16, u16)>,
 }
 
 impl ConnectPlan {
@@ -120,6 +125,7 @@ impl ConnectPlan {
             connect_timeout_secs: None,
             tofu: false,
             clipboard: host.clipboard_sync,
+            wg_relay_ports: None,
         }
     }
 
@@ -206,6 +212,7 @@ impl ConnectPlan {
             connect_timeout_secs: None,
             tofu: false,
             clipboard: host.clipboard_sync,
+            wg_relay_ports: None,
         }
     }
 
@@ -229,7 +236,8 @@ impl ConnectPlan {
         // 9777/9778 — the chosen pair rides --wg-relay-listen into the child.
         let (dial, wg) = match &self.host.wg {
             Some(wg) => {
-                let (lq, ld) = free_relay_ports();
+                // An explicit pair from a batch spawner wins; a single spawn probes.
+                let (lq, ld) = self.wg_relay_ports.unwrap_or_else(free_relay_ports);
                 (
                     format!("127.0.0.1:{lq}"),
                     Some((
@@ -609,34 +617,42 @@ impl ResolvedSpec {
     }
 }
 
-/// The first loopback (QUIC, data) pair whose UDP sockets are both free right now. A WG
-/// session's embedded relay binds these, so concurrent sessions each need their own pair;
-/// the default pair comes first, keeping a single session byte-identical to before. There
-/// is an inherent bind-race between this probe and the child's own bind — on loopback it
-/// is theoretical (only another punktfunk spawn in the same millisecond could steal it),
-/// and the child's error message names the port if it ever loses.
+/// The loopback (QUIC, data) port pairs a WG session's embedded relay can bind. Concurrent
+/// sessions each need their own pair; the default pair comes first, keeping a single session
+/// byte-identical to before. Public so a multi-spawn front-end (the screen wall) can allocate
+/// pairs deterministically across its own batch instead of racing [`free_relay_ports`].
+pub const WG_RELAY_PORT_CANDIDATES: [(u16, u16); 5] = [
+    (9777, 9778),
+    (19777, 19778),
+    (29777, 29778),
+    (39777, 39778),
+    (49777, 49778),
+];
+
+/// The first candidate pair not in `used` whose UDP sockets are both free right now; `None`
+/// when every candidate is taken (five WG streams already up). The bind-race between this
+/// probe and the child's own bind is theoretical on loopback for a single spawn; a front-end
+/// spawning a BATCH passes the pairs it already handed out in `used`, which closes the race
+/// inside the batch (the child's error message still names the port if it ever loses).
+pub fn alloc_relay_pair(used: &[(u16, u16)]) -> Option<(u16, u16)> {
+    WG_RELAY_PORT_CANDIDATES
+        .iter()
+        .copied()
+        .find(|(q, d)| {
+            !used.contains(&(*q, *d))
+                && std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, *q))
+                    .and_then(|a| {
+                        std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, *d))
+                            .map(|b| drop((a, b)))
+                    })
+                    .is_ok()
+        })
+}
+
 fn free_relay_ports() -> (u16, u16) {
-    const CANDIDATES: [(u16, u16); 5] = [
-        (9777, 9778),
-        (19777, 19778),
-        (29777, 29778),
-        (39777, 39778),
-        (49777, 49778),
-    ];
-    for (q, d) in CANDIDATES {
-        let free = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, q))
-            .and_then(|a| {
-                std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, d)).map(|b| drop((a, b)))
-            })
-            .is_ok();
-        if free {
-            return (q, d);
-        }
-    }
-    // All five pairs busy (five WG streams already up): let the child bind the default
-    // pair and fail with a clear "address in use" naming 9777, rather than inventing a
-    // sixth range silently.
-    CANDIDATES[0]
+    // All five pairs busy: let the child bind the default pair and fail with a clear
+    // "address in use" naming 9777, rather than inventing a sixth range silently.
+    alloc_relay_pair(&[]).unwrap_or(WG_RELAY_PORT_CANDIDATES[0])
 }
 
 /// One event from the session child's stdout contract (`{"ready":true}`, `{"error":…}`,
@@ -928,6 +944,7 @@ mod tests {
             connect_timeout_secs: None,
             tofu: false,
             clipboard: false,
+            wg_relay_ports: None,
         };
         assert_eq!(
             plan.session_args(),
