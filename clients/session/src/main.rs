@@ -1060,6 +1060,14 @@ mod session_main {
                     quic_target_port: WG_LOCAL_QUIC_PORT,
                     data_target_port: WG_LOCAL_DATA_PORT,
                 };
+                // The data-plane handshake would otherwise aim video at
+                // `welcome.udp_port` — the HOST-side service port the gate dispatches
+                // on, identical for every session. With two WG sessions up, session 2's
+                // video then lands in session 1's relay (zero frames on 2, stray traffic
+                // killing 1). Only this process knows which relay pair IT got, so publish
+                // the data listener for the core handshake before the pump starts.
+                punktfunk_core::client::WG_RELAY_DATA_PORT
+                    .store(ld, std::sync::atomic::Ordering::SeqCst);
                 std::thread::Builder::new()
                     .name("wg-relay".into())
                     .spawn(move || {
@@ -1068,7 +1076,7 @@ mod session_main {
                         }
                     })
                     .ok();
-                Some(lq)
+                Some((lq, ld))
             }
             _ => {
                 json_line(
@@ -1079,7 +1087,7 @@ mod session_main {
                 return EXIT_CONNECT_FAILED;
             }
         };
-        let (dial_addr, dial_port) = if let Some(lq) = wg {
+        let (dial_addr, dial_port) = if let Some((lq, _)) = wg {
             ("127.0.0.1".to_string(), lq)
         } else {
             (addr.clone(), port)

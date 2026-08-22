@@ -47,6 +47,14 @@ pub use self::planes::AudioPacket;
 pub use self::probe::ProbeOutcome;
 pub use self::rumble::{ActuatorQuirks, RumbleCommand};
 
+/// WG relay mode: the data-listener port of THIS process's loopback relay, set by the
+/// session embedder before it connects. The data-plane handshake then targets it instead
+/// of `welcome.udp_port` — that is the host-side service port the gate dispatches on,
+/// identical for every session, so a second WG session's video would land in the FIRST
+/// session's relay (zero frames on 2, stray traffic killing 1). `0` = direct (non-WG)
+/// connection. A process-global is enough: one session process runs at most one relay.
+pub static WG_RELAY_DATA_PORT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+
 use self::control::{CtrlRequest, Negotiated};
 use self::frame_channel::{DecodeLatAcc, FrameChannel, FramePop};
 use self::planes::{

@@ -220,7 +220,20 @@ pub(super) async fn connect_and_handshake(args: &WorkerArgs) -> Result<Handshake
                 None => (0, None),
             };
 
-        let host_udp = std::net::SocketAddr::new(remote.ip(), welcome.udp_port);
+        // WG relay mode (the session process published its relay's data listener in
+        // WG_RELAY_DATA_PORT and dialed the loopback relay): the data plane must target
+        // THIS session's relay listener, not `welcome.udp_port` — that is the host-side
+        // service port the gate dispatches on, identical for every session, so a second
+        // WG session's video would land in the FIRST session's relay (zero frames on 2,
+        // stray traffic killing 1). The loopback guard keeps a stale value from
+        // redirecting a real direct connection.
+        let wg_data = crate::client::WG_RELAY_DATA_PORT.load(std::sync::atomic::Ordering::SeqCst);
+        let data_port = if remote.ip().is_loopback() && wg_data != 0 {
+            wg_data
+        } else {
+            welcome.udp_port
+        };
+        let host_udp = std::net::SocketAddr::new(remote.ip(), data_port);
         let transport =
             UdpTransport::connect(&format!("0.0.0.0:{udp_port}"), &host_udp.to_string())?;
         // Hole-punch the host's data port so video traverses a NAT / stateful inter-VLAN firewall
