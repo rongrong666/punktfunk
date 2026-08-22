@@ -72,7 +72,11 @@ fn wg_reader(shared: Arc<Shared>) {
         let n = match shared.wg.recv(&mut buf) {
             Ok(n) => n,
             Err(e) => {
-                eprintln!("[wgtunnel-client] wg recv: {e}");
+                // UDP WSAECONNRESET (10054) = ICMP port-unreachable for a
+                // previous send (server rebooting etc.), not a socket fault.
+                if e.kind() != io::ErrorKind::ConnectionReset {
+                    eprintln!("[wgtunnel-client] wg recv: {e}");
+                }
                 thread::sleep(Duration::from_millis(100));
                 continue;
             }

@@ -217,7 +217,12 @@ pub fn run_server(cfg: ServerConfig) -> io::Result<()> {
         let (n, src) = match sock.recv_from(&mut buf) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("[wgtunnel-server] recv: {e}");
+                // UDP WSAECONNRESET (10054) just means a previous send drew an
+                // ICMP port-unreachable (typically a client that went away) —
+                // it is not a socket fault. Log anything else.
+                if e.kind() != io::ErrorKind::ConnectionReset {
+                    eprintln!("[wgtunnel-server] recv: {e}");
+                }
                 continue;
             }
         };
